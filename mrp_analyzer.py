@@ -1,98 +1,97 @@
 import pandas as pd
-import os
-from datetime import datetime
 
-def classify_criticidade(row):
-    falta = (row["DEMANDAMRP"] - row["ESTOQUE DISPONÍVEL"])
-    if falta >= row["ESTOQSEG"] * 0.5:
-        return "Alta"
-    elif falta >= row["ESTOQSEG"] * 0.1:
-        return "Média"
-    else:
-        return "Baixa"
-
-def analyze_mrp(input_file, sheet_name, output_folder='output'):
+def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
     try:
         df = pd.read_excel(input_file, sheet_name=sheet_name)
+    except FileNotFoundError:
+        return None, f"Erro: O arquivo '{input_file}' não foi encontrado."
+    except KeyError:
+        return None, f"Erro: A aba '{sheet_name}' não foi encontrada no arquivo Excel."
     except Exception as e:
-        return None, f"Erro ao ler o Excel: {e}"
+        return None, f"Erro ao ler o arquivo Excel: {e}"
 
     df.columns = df.columns.str.strip().str.replace(' ', '').str.replace('.', '', regex=False).str.upper()
-
-    required = [
-        "CÓD", "DESCRIÇÃOPROMOB", "ESTOQ10", "ESTOQ20", "DEMANDAMRP",
-        "ESTOQSEG", "STATUS", "FORNECEDORPRINCIPAL", "PEDIDOS", "OBS"
+    
+    required_columns_upper = [
+        "CÓD", "DESCRIÇÃOPROMOB", "ESTOQ10", "ESTOQ20",
+        "DEMANDAMRP", "ESTOQSEG", "STATUS",
+        "FORNECEDORPRINCIPAL", "PEDIDOS", "OBS"
     ]
-    missing = [col for col in required if col not in df.columns]
-    if missing:
-        return None, f"Colunas faltando: {missing}"
+    missing_columns = [col for col in required_columns_upper if col not in df.columns]
+    if missing_columns:
+        return None, f"Erro: As seguintes colunas não foram encontradas: {missing_columns}."
 
-    df = df[df["STATUS"].str.lower() != "inativo"].copy()
-    df["ESTOQUE DISPONÍVEL"] = df["ESTOQ10"].fillna(0) + (df["ESTOQ20"].fillna(0) / 3)
-    df["QUANTIDADE A SOLICITAR"] = (
-        df["DEMANDAMRP"].fillna(0) - df["ESTOQUE DISPONÍVEL"] + df["ESTOQSEG"].fillna(0) - df["PEDIDOS"].fillna(0)
-    ).apply(lambda x: max(0, x))
+    df_ativos = df[df["STATUS"].str.lower() != "inativo"].copy()
+    df_ativos["ESTOQUE DISPONÍVEL"] = df_ativos["ESTOQ10"] + (df_ativos["ESTOQ20"] / 3)
 
-    df["ESTOQUE DISPONÍVEL"] = df["ESTOQUE DISPONÍVEL"].fillna(0).round().astype(int)
-    df["QUANTIDADE A SOLICITAR"] = df["QUANTIDADE A SOLICITAR"].fillna(0).round().astype(int)
+    df_criticos = df_ativos[
+        (df_ativos["ESTOQUE DISPONÍVEL"] - df_ativos["DEMANDAMRP"]) < df_ativos["ESTOQSEG"]
+    ].copy()
 
-    criticos = df[(df["ESTOQUE DISPONÍVEL"] - df["DEMANDAMRP"]) < df["ESTOQSEG"]].copy()
+    df_criticos["QUANTIDADE A SOLICITAR"] = (
+        df_criticos["DEMANDAMRP"] - df_criticos["ESTOQUE DISPONÍVEL"] + df_criticos["ESTOQSEG"] - df_criticos["PEDIDOS"]
+    )
+    df_criticos["QUANTIDADE A SOLICITAR"] = df_criticos["QUANTIDADE A SOLICITAR"].apply(lambda x: max(0, x))
 
-    if criticos.empty:
-        return 0, "Nenhum item crítico encontrado."
+    df_criticos["ESTOQUE DISPONÍVEL"] = df_criticos["ESTOQUE DISPONÍVEL"].round().astype(int)
+    df_criticos["QUANTIDADE A SOLICITAR"] = df_criticos["QUANTIDADE A SOLICITAR"].round().astype(int)
+    df_criticos["FORNECEDOR PRINCIPAL"] = df_criticos["FORNECEDORPRINCIPAL"]
 
-    criticos["FORNECEDOR"] = criticos["FORNECEDORPRINCIPAL"]
-    criticos["CRITICIDADE"] = criticos.apply(classify_criticidade, axis=1)
-    criticos.sort_values(by="QUANTIDADE A SOLICITAR", ascending=False, inplace=True)
+    output_columns = [
+        "CÓD", "FORNECEDOR PRINCIPAL", "DESCRIÇÃOPROMOB", "ESTOQ10", "ESTOQ20",
+        "DEMANDAMRP", "ESTOQSEG", "PEDIDOS", "ESTOQUE DISPONÍVEL", "QUANTIDADE A SOLICITAR", "OBS"
+    ]
+    df_criticos = df_criticos[output_columns]
+    df_criticos.sort_values(by="QUANTIDADE A SOLICITAR", ascending=False, inplace=True)
 
-    colunas = {
-        "CÓD": "CÓD.",
-        "FORNECEDOR": "FORNEC.",
-        "DESCRIÇÃOPROMOB": "DESCRIÇÃO",
-        "ESTOQ10": "EST. 10",
-        "ESTOQ20": "EST. 20",
-        "DEMANDAMRP": "DEM. MRP",
-        "ESTOQSEG": "EST. SEG.",
-        "PEDIDOS": "PED.",
-        "ESTOQUE DISPONÍVEL": "EST. DISP.",
-        "QUANTIDADE A SOLICITAR": "QTD. A SOLIC.",
-        "CRITICIDADE": "CRITICIDADE",
-        "OBS": "OBS."
-    }
+    df_criticos.replace([float('inf'), float('-inf')], pd.NA, inplace=True)
+    df_criticos.fillna('', inplace=True)
 
-    output_df = criticos[list(colunas.keys())].rename(columns=colunas)
-
-    os.makedirs(output_folder, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
-    excel_path = os.path.join(output_folder, f"itens_criticos_{timestamp}.xlsx")
-
-    # Exportar para Excel com aba de totais
-    with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
-        output_df.to_excel(writer, sheet_name='Itens Críticos', index=False)
-        resumo = output_df.groupby("FORNEC.")["QTD. A SOLIC."].sum().reset_index()
-        resumo.to_excel(writer, sheet_name='Resumo por Fornecedor', index=False)
-
-        worksheet = writer.sheets['Itens Críticos']
+    try:
+        writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
+        df_criticos.to_excel(writer, sheet_name='Itens Críticos', index=False)
         workbook = writer.book
+        worksheet = writer.sheets['Itens Críticos']
 
-        red_format = workbook.add_format({'bg_color': '#F4CCCC', 'border': 1})
-        col_index = output_df.columns.get_loc("QTD. A SOLIC.")
-        col_letter = chr(65 + col_index)
-        worksheet.conditional_format(f"{col_letter}2:{col_letter}{len(output_df)+1}",
-                                     {'type': 'cell', 'criteria': '!=', 'value': 0, 'format': red_format})
-        worksheet.freeze_panes(1, 0)
-
-        # Gráfico
-        chart = workbook.add_chart({'type': 'column'})
-        max_rows = min(10, len(output_df))
-        chart.add_series({
-            'categories': ['Itens Críticos', 1, 2, max_rows, 2],  # DESCRIÇÃO
-            'values':     ['Itens Críticos', 1, col_index, max_rows, col_index],
-            'name':       'QTD. A SOLIC.',
+        header_format = workbook.add_format({
+            'bold': True, 'text_wrap': True, 'valign': 'top',
+            'fg_color': '#D7E4BC', 'border': 1
         })
-        chart.set_title({'name': 'Top 10 - Quantidade a Solicitar'})
-        chart.set_x_axis({'name': 'Item'})
-        chart.set_y_axis({'name': 'Qtd'})
-        worksheet.insert_chart('L2', chart)
+        int_format = workbook.add_format({'num_format': '0', 'border': 1})
+        text_format = workbook.add_format({'border': 1})
+        red_fill = workbook.add_format({'bg_color': '#F4CCCC', 'border': 1})
+        alt_gray = workbook.add_format({'bg_color': '#F9F9F9'})
 
-    return len(output_df), None
+        for col_num, value in enumerate(df_criticos.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+
+        col_widths = {
+            "FORNECEDOR PRINCIPAL": 20,
+            "DESCRIÇÃOPROMOB": 30,
+            "ESTOQUE DISPONÍVEL": 18,
+            "QUANTIDADE A SOLICITAR": 20
+        }
+
+        for col_num, col_name in enumerate(output_columns):
+            width = col_widths.get(col_name, max(10, len(col_name) + 2))
+            fmt = int_format if df_criticos[col_name].dtype.kind in 'iufc' else text_format
+            worksheet.set_column(col_num, col_num, width, fmt)
+
+        worksheet.freeze_panes(1, 0)
+        worksheet.autofilter(0, 0, len(df_criticos), len(output_columns)-1)
+
+        for row_num, row in enumerate(df_criticos.itertuples(index=False), start=1):
+            for col_num, value in enumerate(row):
+                col_is_qtd = col_num == output_columns.index("QUANTIDADE A SOLICITAR")
+                format_ = red_fill if col_is_qtd and str(value).isdigit() and int(value) != 0 else None
+                if not format_:
+                    format_ = alt_gray if row_num % 2 == 0 else None
+                worksheet.write(row_num, col_num, value, format_)
+
+        writer.close()
+        return len(df_criticos), None
+    except Exception as e:
+        return None, f"Erro ao salvar o arquivo Excel com formatação: {e}"
+
+if __name__ == "__main__":
+    print("Para usar, chame a função analyze_mrp(input_file, sheet_name, output_file)")
