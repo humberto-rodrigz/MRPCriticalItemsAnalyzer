@@ -1,4 +1,3 @@
-# === mrp_gui.py com melhorias completas na aba Tabela ===
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import os
@@ -17,7 +16,7 @@ class MRPAnalyzerGUI:
         self.style = Style("darkly")
         self.style.master = root
 
-        self.root.title("Analisador de Itens Críticos MRP")
+        self.root.title("Analyzer MRP")
         self.root.geometry("1150x750")
         self.root.resizable(True, True)
 
@@ -41,7 +40,7 @@ class MRPAnalyzerGUI:
         self.notebook.add(self.graph_frame, text="Gráfico")
         self.notebook.add(self.table_frame, text="Tabela")
 
-        # Form principal
+        # main form
         form_frame = ttk.Frame(self.main_frame)
         form_frame.pack(pady=20)
 
@@ -60,7 +59,7 @@ class MRPAnalyzerGUI:
         self.status_label.grid(row=4, column=0, columnspan=3, pady=(0, 10))
 
         # Log
-        ttk.Label(self.main_frame, text="Log de Execução:").pack(anchor=tk.W, padx=10)
+        ttk.Label(self.main_frame, text="Log:").pack(anchor=tk.W, padx=10)
         log_frame = ttk.Frame(self.main_frame)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD)
@@ -69,7 +68,7 @@ class MRPAnalyzerGUI:
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Tabela interativa
+        # form interactive
         top_toolbar = ttk.Frame(self.table_frame)
         top_toolbar.pack(fill=tk.X, pady=5)
 
@@ -192,7 +191,7 @@ class MRPAnalyzerGUI:
         for _, row in page.iterrows():
             self.tree.insert("", tk.END, values=list(row))
 
-        # Estatísticas
+        # Statistics
         total = len(df)
         soma = df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0
         top_forn = df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"

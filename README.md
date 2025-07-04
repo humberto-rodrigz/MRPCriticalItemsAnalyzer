@@ -1,4 +1,4 @@
-# README.md (English version)
+# README.md
 
 # 📊 MRP Critical Items Analyzer
 
