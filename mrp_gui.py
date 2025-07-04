@@ -1,4 +1,3 @@
-# === mrp_gui.py atualizado com gráfico, validação, barra de progresso e tema escuro ===
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import os
@@ -13,7 +12,7 @@ from ttkbootstrap import Style
 class MRPAnalyzerGUI:
     def __init__(self, root):
         self.root = root
-        self.style = Style("darkly")  # ou "cosmo", "flatly", "darkly", etc.
+        self.style = Style("darkly")
         self.style.master = root
 
         self.root.title("Analisador de Itens Críticos MRP")
