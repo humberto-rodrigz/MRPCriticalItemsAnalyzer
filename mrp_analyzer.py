@@ -4,7 +4,7 @@ def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
     try:
         df = pd.read_excel(input_file, sheet_name=sheet_name)
     except FileNotFoundError:
-        return None, f"Erro: O arquivo '{input_file}' não foi encontrado."
+        return None, f"Erro: O arquivo '{input_file}' not found."
     except KeyError:
         return None, f"Erro: A aba '{sheet_name}' não foi encontrada no arquivo Excel."
     except Exception as e:
