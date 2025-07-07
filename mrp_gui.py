@@ -128,7 +128,7 @@ class MRPAnalyzerGUI:
             return
 
         self.progress.start()
-        self.status_label.config(text="Analisando...")
+        self.status_label.config(text="Analyzing...")
         self.root.update_idletasks()
 
         start = time.time()
@@ -145,7 +145,7 @@ class MRPAnalyzerGUI:
             self.status_label.config(text=f"Concluído em {tempo}s")
             self.plot_graph(output_file)
             self.load_table_data(output_file)
-            abrir = messagebox.askyesno("Sucesso", "Deseja abrir o arquivo gerado?")
+            abrir = messagebox.askyesno("Sucess", "Deseja abrir o arquivo gerado?")
             if abrir:
                 webbrowser.open(output_file)
 
