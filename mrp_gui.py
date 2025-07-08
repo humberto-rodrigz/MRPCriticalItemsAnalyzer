@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mrp_analyzer import analyze_mrp
 from ttkbootstrap import Style
-from tkinter import simpledialog
 
 class MRPAnalyzerGUI:
     def __init__(self, root):
@@ -16,8 +15,8 @@ class MRPAnalyzerGUI:
         self.style = Style("darkly")
         self.style.master = root
 
-        self.root.title("Analyzer MRP")
-        self.root.geometry("1150x750")
+        self.root.title("Analisador de Itens Críticos MRP")
+        self.root.geometry("1200x800")
         self.root.resizable(True, True)
 
         self.selected_file = tk.StringVar()
@@ -40,12 +39,15 @@ class MRPAnalyzerGUI:
         self.notebook.add(self.graph_frame, text="Gráfico")
         self.notebook.add(self.table_frame, text="Tabela")
 
-        # main form
+        self.create_main_frame()
+        self.create_table_frame()
+
+    def create_main_frame(self):
         form_frame = ttk.Frame(self.main_frame)
         form_frame.pack(pady=20)
 
         ttk.Label(form_frame, text="Arquivo Excel:").grid(row=0, column=0, sticky=tk.E, padx=5, pady=5)
-        ttk.Entry(form_frame, textvariable=self.selected_file, width=50).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Entry(form_frame, textvariable=self.selected_file, width=60).grid(row=0, column=1, padx=5, pady=5)
         ttk.Button(form_frame, text="Procurar", command=self.browse_file).grid(row=0, column=2, padx=5, pady=5)
 
         ttk.Label(form_frame, text="Nome da Aba:").grid(row=1, column=0, sticky=tk.E, padx=5, pady=5)
@@ -55,20 +57,24 @@ class MRPAnalyzerGUI:
 
         self.progress = ttk.Progressbar(form_frame, mode="indeterminate")
         self.progress.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+
         self.status_label = ttk.Label(form_frame, text="")
         self.status_label.grid(row=4, column=0, columnspan=3, pady=(0, 10))
 
-        # Log
         ttk.Label(self.main_frame, text="Log:").pack(anchor=tk.W, padx=10)
         log_frame = ttk.Frame(self.main_frame)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
         self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD)
         scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # form interactive
+        self.root.bind("<Control-t>", self.toggle_theme)
+        self.log_message("Bem-vindo ao Analisador de Itens Críticos MRP!")
+
+    def create_table_frame(self):
         top_toolbar = ttk.Frame(self.table_frame)
         top_toolbar.pack(fill=tk.X, pady=5)
 
@@ -76,10 +82,11 @@ class MRPAnalyzerGUI:
         self.filter_entry = tk.StringVar()
         self.filter_box = ttk.Combobox(top_toolbar, textvariable=self.filter_column, state="readonly", width=25)
         self.filter_box.pack(side=tk.LEFT, padx=5)
+
         ttk.Entry(top_toolbar, textvariable=self.filter_entry, width=30).pack(side=tk.LEFT, padx=5)
         ttk.Button(top_toolbar, text="Filtrar", command=self.apply_filter).pack(side=tk.LEFT, padx=5)
         ttk.Button(top_toolbar, text="Recarregar", command=self.load_table_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(top_toolbar, text="Salvar Como...", command=self.salvar_como_excel).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(top_toolbar, text="Salvar Como Excel", command=self.salvar_como_excel).pack(side=tk.RIGHT, padx=5)
         ttk.Button(top_toolbar, text="Exportar CSV", command=self.exportar_csv).pack(side=tk.RIGHT, padx=5)
 
         self.tree = ttk.Treeview(self.table_frame, show="headings")
@@ -88,16 +95,15 @@ class MRPAnalyzerGUI:
 
         bottom = ttk.Frame(self.table_frame)
         bottom.pack(fill=tk.X, pady=10)
+
         self.stats_label = ttk.Label(bottom, text="")
         self.stats_label.pack(side=tk.LEFT, padx=10)
 
         self.page_buttons = ttk.Frame(bottom)
         self.page_buttons.pack(side=tk.RIGHT)
+
         ttk.Button(self.page_buttons, text="Anterior", command=self.previous_page).pack(side=tk.LEFT, padx=5)
         ttk.Button(self.page_buttons, text="Próximo", command=self.next_page).pack(side=tk.LEFT, padx=5)
-
-        self.root.bind("<Control-t>", self.toggle_theme)
-        self.log_message("Bem-vindo ao Analisador de Itens Críticos MRP!")
 
     def browse_file(self):
         filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
@@ -111,29 +117,28 @@ class MRPAnalyzerGUI:
 
     def validate_sheet(self, file, sheet):
         try:
-            sheets = pd.ExcelFile(file).sheet_names
-            return sheet in sheets
+            return sheet in pd.ExcelFile(file).sheet_names
         except Exception as e:
-            self.log_message(f"Erro ao ler abas: {e}")
+            self.log_message(f"Erro ao validar aba: {e}")
             return False
 
     def analyze_mrp_file(self):
         file = self.selected_file.get()
         sheet = self.sheet_name.get()
         if not file or not os.path.exists(file):
-            messagebox.showerror("Erro", "Arquivo inválido.")
+            messagebox.showerror("Erro", "Arquivo não encontrado.")
             return
         if not self.validate_sheet(file, sheet):
-            messagebox.showerror("Erro", f"A aba '{sheet}' não foi encontrada no arquivo.")
+            messagebox.showerror("Erro", f"A aba '{sheet}' não existe no arquivo.")
             return
 
         self.progress.start()
-        self.status_label.config(text="Analyzing...")
+        self.status_label.config(text="Analisando...")
         self.root.update_idletasks()
 
         start = time.time()
         output_file = os.path.join(os.path.dirname(file), "itens_criticos.xlsx")
-        num_items, error = analyze_mrp(file, sheet, output_file)
+        num_items, error, _ = analyze_mrp(file, sheet, output_file)
         self.progress.stop()
 
         if error:
@@ -145,8 +150,7 @@ class MRPAnalyzerGUI:
             self.status_label.config(text=f"Concluído em {tempo}s")
             self.plot_graph(output_file)
             self.load_table_data(output_file)
-            abrir = messagebox.askyesno("Sucess", "Deseja abrir o arquivo gerado?")
-            if abrir:
+            if messagebox.askyesno("Sucesso", "Deseja abrir o arquivo gerado?"):
                 webbrowser.open(output_file)
 
     def plot_graph(self, excel_path):
@@ -154,9 +158,12 @@ class MRPAnalyzerGUI:
             df = pd.read_excel(excel_path)
             df = df[df["QUANTIDADE A SOLICITAR"] > 0]
             fig, ax = plt.subplots(figsize=(9, 6))
-            ax.barh(df["CÓD"].astype(str), df["QUANTIDADE A SOLICITAR"])
+            bars = ax.barh(df["CÓD"].astype(str), df["QUANTIDADE A SOLICITAR"])
             ax.set_xlabel("Qtd a Solicitar")
             ax.set_title("Itens Críticos - Quantidade a Solicitar")
+            for bar in bars:
+                width = bar.get_width()
+                ax.text(width + 1, bar.get_y() + bar.get_height()/2, str(int(width)), va='center')
             fig.tight_layout()
 
             for widget in self.graph_frame.winfo_children():
@@ -184,18 +191,19 @@ class MRPAnalyzerGUI:
         start = self.current_page * self.page_size
         end = start + self.page_size
         page = df.iloc[start:end]
+
         self.tree["columns"] = list(df.columns)
         for col in df.columns:
             self.tree.heading(col, text=col, command=lambda c=col: self.sort_column(c))
             self.tree.column(col, width=100, anchor="center")
+
         for _, row in page.iterrows():
             self.tree.insert("", tk.END, values=list(row))
 
-        # Statistics
         total = len(df)
         soma = df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0
         top_forn = df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
-        self.stats_label.config(text=f"Total: {total} itens | Soma Qtd: {soma} | Fornecedor com mais itens: {top_forn}")
+        self.stats_label.config(text=f"Total: {total} | Soma: {soma} | Fornecedor Top: {top_forn}")
 
     def next_page(self):
         if (self.current_page + 1) * self.page_size < len(self.df_tabela):
@@ -241,10 +249,10 @@ class MRPAnalyzerGUI:
             self.log_message(f"Excel salvo em: {file}")
 
     def toggle_theme(self, event=None):
-        theme = "darkly" if self.style.theme.name == "flatly" else "flatly"
-        self.style.theme_use(theme)
-        self.log_message(f"Tema alterado para: {theme}")
-
+        atual = self.style.theme.name
+        novo = "darkly" if atual == "flatly" else "flatly"
+        self.style.theme_use(novo)
+        self.log_message(f"Tema alterado para: {novo}")
 
 def main():
     root = tk.Tk()
