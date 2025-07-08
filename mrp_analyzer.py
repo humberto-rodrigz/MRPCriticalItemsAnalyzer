@@ -1,4 +1,6 @@
 import pandas as pd
+import os
+from datetime import datetime
 
 def format_excel(writer, df_criticos):
     workbook = writer.book
@@ -50,7 +52,6 @@ def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
     except Exception as e:
         return None, f"Erro ao ler o arquivo Excel: {e}", None
 
-    # Padroniza nomes de colunas
     df.columns = df.columns.str.strip().str.replace(' ', '').str.replace('.', '', regex=False).str.upper()
 
     required_columns = [
@@ -62,14 +63,11 @@ def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
     if missing:
         return None, f"Colunas obrigatórias não encontradas: {missing}", None
 
-    # Filtra ativos e calcula estoque disponível
     df = df[df["STATUS"].str.lower() != "inativo"].copy()
     df["ESTOQUE DISPONÍVEL"] = df["ESTOQ10"] + (df["ESTOQ20"] / 3)
 
-    # Filtra itens críticos
     df_criticos = df[(df["ESTOQUE DISPONÍVEL"] - df["DEMANDAMRP"]) < df["ESTOQSEG"]].copy()
 
-    # Cálculo da quantidade a solicitar
     df_criticos["QUANTIDADE A SOLICITAR"] = (
         df_criticos["DEMANDAMRP"] - df_criticos["ESTOQUE DISPONÍVEL"] + df_criticos["ESTOQSEG"] - df_criticos["PEDIDOS"]
     ).clip(lower=0).round().astype(int)
@@ -90,6 +88,21 @@ def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
         df_criticos.to_excel(writer, sheet_name='Itens Críticos', index=False)
         format_excel(writer, df_criticos)
         writer.close()
+
+        # Salvar cópia no histórico
+        historico_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
+        os.makedirs(historico_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        historico_path = os.path.join(historico_dir, f"itens_criticos_{timestamp}.xlsx")
+
+        try:
+            historico_writer = pd.ExcelWriter(historico_path, engine='xlsxwriter')
+            df_criticos.to_excel(historico_writer, sheet_name='Itens Críticos', index=False)
+            format_excel(historico_writer, df_criticos)
+            historico_writer.close()
+        except Exception as e:
+            print(f"[Aviso] Não foi possível salvar no histórico: {e}")
+
         return len(df_criticos), None, df_criticos
     except Exception as e:
         return None, f"Erro ao salvar o Excel com formatação: {e}", None
