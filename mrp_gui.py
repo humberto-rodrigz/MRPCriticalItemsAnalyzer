@@ -4,8 +4,6 @@ import os
 import time
 import webbrowser
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mrp_analyzer import analyze_mrp
 from ttkbootstrap import Style
 
@@ -32,11 +30,9 @@ class MRPAnalyzerGUI:
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
         self.main_frame = ttk.Frame(self.notebook, padding=15)
-        self.graph_frame = ttk.Frame(self.notebook, padding=15)
         self.table_frame = ttk.Frame(self.notebook, padding=15)
 
         self.notebook.add(self.main_frame, text="Análise MRP")
-        self.notebook.add(self.graph_frame, text="Gráfico")
         self.notebook.add(self.table_frame, text="Tabela")
 
         self.create_main_frame()
@@ -80,13 +76,22 @@ class MRPAnalyzerGUI:
 
         self.filter_column = tk.StringVar()
         self.filter_entry = tk.StringVar()
+        self.qtd_min = tk.StringVar()
+        self.qtd_max = tk.StringVar()
+
         self.filter_box = ttk.Combobox(top_toolbar, textvariable=self.filter_column, state="readonly", width=25)
         self.filter_box.pack(side=tk.LEFT, padx=5)
-
         ttk.Entry(top_toolbar, textvariable=self.filter_entry, width=30).pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(top_toolbar, text="Qtd Min:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(top_toolbar, textvariable=self.qtd_min, width=6).pack(side=tk.LEFT)
+
+        ttk.Label(top_toolbar, text="Qtd Max:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(top_toolbar, textvariable=self.qtd_max, width=6).pack(side=tk.LEFT)
+
         ttk.Button(top_toolbar, text="Filtrar", command=self.apply_filter).pack(side=tk.LEFT, padx=5)
         ttk.Button(top_toolbar, text="Recarregar", command=self.load_table_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(top_toolbar, text="Salvar Como Excel", command=self.salvar_como_excel).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(top_toolbar, text="Salvar Excel", command=self.salvar_como_excel).pack(side=tk.RIGHT, padx=5)
         ttk.Button(top_toolbar, text="Exportar CSV", command=self.exportar_csv).pack(side=tk.RIGHT, padx=5)
 
         self.tree = ttk.Treeview(self.table_frame, show="headings")
@@ -101,7 +106,6 @@ class MRPAnalyzerGUI:
 
         self.page_buttons = ttk.Frame(bottom)
         self.page_buttons.pack(side=tk.RIGHT)
-
         ttk.Button(self.page_buttons, text="Anterior", command=self.previous_page).pack(side=tk.LEFT, padx=5)
         ttk.Button(self.page_buttons, text="Próximo", command=self.next_page).pack(side=tk.LEFT, padx=5)
 
@@ -148,31 +152,9 @@ class MRPAnalyzerGUI:
             tempo = round(time.time() - start, 2)
             self.log_message(f"Concluído em {tempo}s. {num_items} itens críticos.")
             self.status_label.config(text=f"Concluído em {tempo}s")
-            self.plot_graph(output_file)
             self.load_table_data(output_file)
             if messagebox.askyesno("Sucesso", "Deseja abrir o arquivo gerado?"):
                 webbrowser.open(output_file)
-
-    def plot_graph(self, excel_path):
-        try:
-            df = pd.read_excel(excel_path)
-            df = df[df["QUANTIDADE A SOLICITAR"] > 0]
-            fig, ax = plt.subplots(figsize=(9, 6))
-            bars = ax.barh(df["CÓD"].astype(str), df["QUANTIDADE A SOLICITAR"])
-            ax.set_xlabel("Qtd a Solicitar")
-            ax.set_title("Itens Críticos - Quantidade a Solicitar")
-            for bar in bars:
-                width = bar.get_width()
-                ax.text(width + 1, bar.get_y() + bar.get_height()/2, str(int(width)), va='center')
-            fig.tight_layout()
-
-            for widget in self.graph_frame.winfo_children():
-                widget.destroy()
-            canvas = FigureCanvasTkAgg(fig, master=self.graph_frame)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        except Exception as e:
-            self.log_message(f"Erro ao gerar gráfico: {e}")
 
     def load_table_data(self, excel_path=None):
         try:
@@ -195,33 +177,46 @@ class MRPAnalyzerGUI:
         self.tree["columns"] = list(df.columns)
         for col in df.columns:
             self.tree.heading(col, text=col, command=lambda c=col: self.sort_column(c))
-            self.tree.column(col, width=100, anchor="center")
+            self.tree.column(col, width=120, anchor="center")
 
         for _, row in page.iterrows():
             self.tree.insert("", tk.END, values=list(row))
 
         total = len(df)
         soma = df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0
+        media = round(df["QUANTIDADE A SOLICITAR"].mean(), 2) if "QUANTIDADE A SOLICITAR" in df.columns else 0
         top_forn = df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
-        self.stats_label.config(text=f"Total: {total} | Soma: {soma} | Fornecedor Top: {top_forn}")
-
-    def next_page(self):
-        if (self.current_page + 1) * self.page_size < len(self.df_tabela):
-            self.current_page += 1
-            self.show_table_page()
+        self.stats_label.config(text=f"Total: {total} | Soma Qtd: {soma} | Média: {media} | Fornecedor Top: {top_forn}")
 
     def previous_page(self):
         if self.current_page > 0:
             self.current_page -= 1
             self.show_table_page()
 
+    def next_page(self):
+        if (self.current_page + 1) * self.page_size < len(self.df_tabela):
+            self.current_page += 1
+            self.show_table_page()
+
     def apply_filter(self):
+        df = self.df_tabela.copy()
         col = self.filter_column.get()
         val = self.filter_entry.get().strip().lower()
+        qtd_min = self.qtd_min.get()
+        qtd_max = self.qtd_max.get()
+
         if col and val:
-            self.df_tabela = self.df_tabela[self.df_tabela[col].astype(str).str.lower().str.contains(val)]
-            self.current_page = 0
-            self.show_table_page()
+            df = df[df[col].astype(str).str.lower().str.contains(val)]
+
+        if "QUANTIDADE A SOLICITAR" in df.columns:
+            if qtd_min.isdigit():
+                df = df[df["QUANTIDADE A SOLICITAR"] >= int(qtd_min)]
+            if qtd_max.isdigit():
+                df = df[df["QUANTIDADE A SOLICITAR"] <= int(qtd_max)]
+
+        self.df_tabela = df
+        self.current_page = 0
+        self.show_table_page()
 
     def sort_column(self, col):
         self.df_tabela.sort_values(by=col, ascending=True, inplace=True, ignore_index=True)
