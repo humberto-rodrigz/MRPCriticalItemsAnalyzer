@@ -2,23 +2,20 @@ import pandas as pd
 import os
 from datetime import datetime
 
-def format_excel(writer, df_criticos):
+def format_excel(writer, df):
     workbook = writer.book
     worksheet = writer.sheets['Itens Críticos']
 
-    header_format = workbook.add_format({
-        'bold': True, 'text_wrap': True, 'valign': 'top',
-        'fg_color': '#D7E4BC', 'border': 1
-    })
-    int_format = workbook.add_format({'num_format': '0', 'border': 1})
-    text_format = workbook.add_format({'border': 1})
-    red_fill = workbook.add_format({'bg_color': '#F4CCCC', 'border': 1})
-    alt_gray = workbook.add_format({'bg_color': '#F9F9F9'})
+    header_fmt = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top',
+                                      'fg_color': '#D7E4BC', 'border': 1})
+    int_fmt = workbook.add_format({'num_format': '0', 'border': 1})
+    text_fmt = workbook.add_format({'border': 1})
+    highlight_fmt = workbook.add_format({'bg_color': '#F4CCCC', 'border': 1})
+    alt_row_fmt = workbook.add_format({'bg_color': '#F9F9F9'})
 
-    for col_num, value in enumerate(df_criticos.columns.values):
-        worksheet.write(0, col_num, value, header_format)
+    for col_num, value in enumerate(df.columns.values):
+        worksheet.write(0, col_num, value, header_fmt)
 
-    output_columns = df_criticos.columns.tolist()
     col_widths = {
         "FORNECEDOR PRINCIPAL": 20,
         "DESCRIÇÃOPROMOB": 30,
@@ -26,86 +23,79 @@ def format_excel(writer, df_criticos):
         "QUANTIDADE A SOLICITAR": 20
     }
 
-    for col_num, col_name in enumerate(output_columns):
-        width = col_widths.get(col_name, max(10, len(col_name) + 2))
-        fmt = int_format if df_criticos[col_name].dtype.kind in 'iufc' else text_format
-        worksheet.set_column(col_num, col_num, width, fmt)
+    for i, col in enumerate(df.columns):
+        width = col_widths.get(col, max(10, len(col) + 2))
+        fmt = int_fmt if pd.api.types.is_numeric_dtype(df[col]) else text_fmt
+        worksheet.set_column(i, i, width, fmt)
 
     worksheet.freeze_panes(1, 0)
-    worksheet.autofilter(0, 0, len(df_criticos), len(output_columns) - 1)
+    worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
 
-    for row_num, row in enumerate(df_criticos.itertuples(index=False), start=1):
-        for col_num, value in enumerate(row):
-            col_is_qtd = output_columns[col_num] == "QUANTIDADE A SOLICITAR"
-            format_ = red_fill if col_is_qtd and str(value).isdigit() and int(value) != 0 else None
-            if not format_:
-                format_ = alt_gray if row_num % 2 == 0 else None
-            worksheet.write(row_num, col_num, value, format_)
+    for row_idx, row in enumerate(df.itertuples(index=False), start=1):
+        for col_idx, value in enumerate(row):
+            fmt = None
+            if df.columns[col_idx] == "QUANTIDADE A SOLICITAR" and isinstance(value, (int, float)) and value > 0:
+                fmt = highlight_fmt
+            elif row_idx % 2 == 0:
+                fmt = alt_row_fmt
+            worksheet.write(row_idx, col_idx, value, fmt)
 
 def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
     try:
         df = pd.read_excel(input_file, sheet_name=sheet_name)
-    except FileNotFoundError:
-        return None, f"Erro: O arquivo '{input_file}' não foi encontrado.", None
-    except KeyError:
-        return None, f"Erro: A aba '{sheet_name}' não foi encontrada no arquivo.", None
     except Exception as e:
-        return None, f"Erro ao ler o arquivo Excel: {e}", None
+        return None, f"Erro ao ler Excel: {e}", None
 
-    df.columns = df.columns.str.strip().str.replace(' ', '').str.replace('.', '', regex=False).str.upper()
+    df.columns = df.columns.str.strip().str.upper().str.replace(" ", "").str.replace(".", "", regex=False)
 
-    required_columns = [
+    required = [
         "CÓD", "DESCRIÇÃOPROMOB", "ESTOQ10", "ESTOQ20",
         "DEMANDAMRP", "ESTOQSEG", "STATUS",
         "FORNECEDORPRINCIPAL", "PEDIDOS", "OBS"
     ]
-    missing = [col for col in required_columns if col not in df.columns]
+    missing = [col for col in required if col not in df.columns]
     if missing:
-        return None, f"Colunas obrigatórias não encontradas: {missing}", None
+        return None, f"Colunas ausentes: {missing}", None
 
     df = df[df["STATUS"].str.lower() != "inativo"].copy()
     df["ESTOQUE DISPONÍVEL"] = df["ESTOQ10"] + (df["ESTOQ20"] / 3)
 
-    df_criticos = df[(df["ESTOQUE DISPONÍVEL"] - df["DEMANDAMRP"]) < df["ESTOQSEG"]].copy()
-
-    df_criticos["QUANTIDADE A SOLICITAR"] = (
-        df_criticos["DEMANDAMRP"] - df_criticos["ESTOQUE DISPONÍVEL"] + df_criticos["ESTOQSEG"] - df_criticos["PEDIDOS"]
+    criticos = df[(df["ESTOQUE DISPONÍVEL"] - df["DEMANDAMRP"]) < df["ESTOQSEG"]].copy()
+    criticos["QUANTIDADE A SOLICITAR"] = (
+        criticos["DEMANDAMRP"] - criticos["ESTOQUE DISPONÍVEL"] + criticos["ESTOQSEG"] - criticos["PEDIDOS"]
     ).clip(lower=0).round().astype(int)
 
-    df_criticos["FORNECEDOR PRINCIPAL"] = df_criticos["FORNECEDORPRINCIPAL"]
-    df_criticos["ESTOQUE DISPONÍVEL"] = df_criticos["ESTOQUE DISPONÍVEL"].round().astype(int)
+    criticos["FORNECEDOR PRINCIPAL"] = criticos["FORNECEDORPRINCIPAL"]
+    criticos["ESTOQUE DISPONÍVEL"] = criticos["ESTOQUE DISPONÍVEL"].round().astype(int)
 
-    output_columns = [
+    final_columns = [
         "CÓD", "FORNECEDOR PRINCIPAL", "DESCRIÇÃOPROMOB", "ESTOQ10", "ESTOQ20",
-        "DEMANDAMRP", "ESTOQSEG", "PEDIDOS", "ESTOQUE DISPONÍVEL", "QUANTIDADE A SOLICITAR", "OBS"
+        "DEMANDAMRP", "ESTOQSEG", "PEDIDOS", "ESTOQUE DISPONÍVEL",
+        "QUANTIDADE A SOLICITAR", "OBS"
     ]
-
-    df_criticos = df_criticos[output_columns].fillna("").replace([float("inf"), float("-inf")], pd.NA)
-    df_criticos.sort_values(by="QUANTIDADE A SOLICITAR", ascending=False, inplace=True)
+    criticos = criticos[final_columns].fillna("").replace([float("inf"), float("-inf")], pd.NA)
+    criticos.sort_values(by="QUANTIDADE A SOLICITAR", ascending=False, inplace=True)
 
     try:
         writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
-        df_criticos.to_excel(writer, sheet_name='Itens Críticos', index=False)
-        format_excel(writer, df_criticos)
+        criticos.to_excel(writer, sheet_name="Itens Críticos", index=False)
+        format_excel(writer, criticos)
         writer.close()
 
-        # Salvar cópia no histórico
-        historico_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
-        os.makedirs(historico_dir, exist_ok=True)
+        # Histórico
+        hist_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
+        os.makedirs(hist_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        historico_path = os.path.join(historico_dir, f"itens_criticos_{timestamp}.xlsx")
+        hist_path = os.path.join(hist_dir, f"itens_criticos_{timestamp}.xlsx")
 
-        try:
-            historico_writer = pd.ExcelWriter(historico_path, engine='xlsxwriter')
-            df_criticos.to_excel(historico_writer, sheet_name='Itens Críticos', index=False)
-            format_excel(historico_writer, df_criticos)
-            historico_writer.close()
-        except Exception as e:
-            print(f"[Aviso] Não foi possível salvar no histórico: {e}")
+        hist_writer = pd.ExcelWriter(hist_path, engine='xlsxwriter')
+        criticos.to_excel(hist_writer, sheet_name="Itens Críticos", index=False)
+        format_excel(hist_writer, criticos)
+        hist_writer.close()
 
-        return len(df_criticos), None, df_criticos
+        return len(criticos), None, criticos
     except Exception as e:
-        return None, f"Erro ao salvar o Excel com formatação: {e}", None
+        return None, f"Erro ao salvar Excel: {e}", None
 
 if __name__ == "__main__":
-    print("Use: analyze_mrp(input_file, sheet_name, output_file)")
+    print("Use: analyze_mrp(input_file, sheet_name)")

@@ -7,133 +7,90 @@ import pandas as pd
 from mrp_analyzer import analyze_mrp
 from ttkbootstrap import Style
 
-class MRPAnalyzerGUI:
+class MRPGUI:
     def __init__(self, root):
         self.root = root
-        self.style = Style("darkly")
-        self.style.master = root
-
+        self.style = Style("flatly")
         self.root.title("Analisador de Itens Críticos MRP")
         self.root.geometry("1200x800")
-        self.root.resizable(True, True)
 
         self.selected_file = tk.StringVar()
         self.sheet_name = tk.StringVar(value="Cálculo MRP")
-        self.df_tabela = pd.DataFrame()
+        self.df_table = pd.DataFrame()
         self.current_page = 0
         self.page_size = 50
 
-        self.create_widgets()
+        self.compare_before = None
+        self.compare_after = None
 
-    def create_widgets(self):
+        self._build_ui()
+
+    def _build_ui(self):
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        self.main_frame = ttk.Frame(self.notebook, padding=15)
-        self.table_frame = ttk.Frame(self.notebook, padding=15)
+        self.tab_analysis = ttk.Frame(self.notebook, padding=15)
+        self.tab_table = ttk.Frame(self.notebook, padding=15)
+        self.tab_compare = ttk.Frame(self.notebook, padding=15)
 
-        self.notebook.add(self.main_frame, text="Análise MRP")
-        self.notebook.add(self.table_frame, text="Tabela")
+        self.notebook.add(self.tab_analysis, text="Análise")
+        self.notebook.add(self.tab_table, text="Tabela")
+        self.notebook.add(self.tab_compare, text="Comparação")
 
-        self.create_main_frame()
-        self.create_table_frame()
+        self._build_analysis_tab()
+        self._build_table_tab()
+        self._build_compare_tab()
 
-    def create_main_frame(self):
-        form_frame = ttk.Frame(self.main_frame)
-        form_frame.pack(pady=20)
+    # --- ABA ANÁLISE ---
+    def _build_analysis_tab(self):
+        form = ttk.Frame(self.tab_analysis)
+        form.pack(pady=10)
 
-        ttk.Label(form_frame, text="Arquivo Excel:").grid(row=0, column=0, sticky=tk.E, padx=5, pady=5)
-        ttk.Entry(form_frame, textvariable=self.selected_file, width=60).grid(row=0, column=1, padx=5, pady=5)
-        ttk.Button(form_frame, text="Procurar", command=self.browse_file).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Label(form, text="Arquivo Excel:").grid(row=0, column=0, sticky=tk.E)
+        ttk.Entry(form, textvariable=self.selected_file, width=60).grid(row=0, column=1, padx=5)
+        ttk.Button(form, text="Selecionar", command=self._browse_file).grid(row=0, column=2)
 
-        ttk.Label(form_frame, text="Nome da Aba:").grid(row=1, column=0, sticky=tk.E, padx=5, pady=5)
-        ttk.Entry(form_frame, textvariable=self.sheet_name, width=30).grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(form, text="Nome da Aba:").grid(row=1, column=0, sticky=tk.E, pady=5)
+        ttk.Entry(form, textvariable=self.sheet_name, width=30).grid(row=1, column=1, sticky=tk.W, pady=5)
 
-        ttk.Button(form_frame, text="Analisar MRP", command=self.analyze_mrp_file).grid(row=2, column=0, columnspan=3, pady=10)
+        ttk.Button(form, text="Executar Análise", command=self._run_analysis).grid(row=2, column=0, columnspan=3, pady=10)
 
-        self.progress = ttk.Progressbar(form_frame, mode="indeterminate")
-        self.progress.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        self.progress = ttk.Progressbar(form, mode="indeterminate")
+        self.progress.grid(row=3, column=0, columnspan=3, sticky=tk.EW)
 
-        self.status_label = ttk.Label(form_frame, text="")
-        self.status_label.grid(row=4, column=0, columnspan=3, pady=(0, 10))
+        self.status_label = ttk.Label(form, text="")
+        self.status_label.grid(row=4, column=0, columnspan=3, pady=5)
 
-        ttk.Label(self.main_frame, text="Log:").pack(anchor=tk.W, padx=10)
-        log_frame = ttk.Frame(self.main_frame)
+        ttk.Label(self.tab_analysis, text="Log:").pack(anchor=tk.W, padx=10)
+        log_frame = ttk.Frame(self.tab_analysis)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD)
-        scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=scrollbar.set)
+        scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
+        self.log_text.config(yscrollcommand=scrollbar.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.root.bind("<Control-t>", self.toggle_theme)
-        self.log_message("Bem-vindo ao Analisador de Itens Críticos MRP!")
+    def _browse_file(self):
+        file = filedialog.askopenfilename(filetypes=[("Planilhas Excel", "*.xlsx *.xls")])
+        if file:
+            self.selected_file.set(file)
+            self._log(f"Arquivo selecionado: {os.path.basename(file)}")
 
-    def create_table_frame(self):
-        top_toolbar = ttk.Frame(self.table_frame)
-        top_toolbar.pack(fill=tk.X, pady=5)
-
-        self.filter_column = tk.StringVar()
-        self.filter_entry = tk.StringVar()
-        self.qtd_min = tk.StringVar()
-        self.qtd_max = tk.StringVar()
-
-        self.filter_box = ttk.Combobox(top_toolbar, textvariable=self.filter_column, state="readonly", width=25)
-        self.filter_box.pack(side=tk.LEFT, padx=5)
-        ttk.Entry(top_toolbar, textvariable=self.filter_entry, width=30).pack(side=tk.LEFT, padx=5)
-
-        ttk.Label(top_toolbar, text="Qtd Min:").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(top_toolbar, textvariable=self.qtd_min, width=6).pack(side=tk.LEFT)
-
-        ttk.Label(top_toolbar, text="Qtd Max:").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(top_toolbar, textvariable=self.qtd_max, width=6).pack(side=tk.LEFT)
-
-        ttk.Button(top_toolbar, text="Filtrar", command=self.apply_filter).pack(side=tk.LEFT, padx=5)
-        ttk.Button(top_toolbar, text="Recarregar", command=self.load_table_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(top_toolbar, text="Salvar Excel", command=self.salvar_como_excel).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(top_toolbar, text="Exportar CSV", command=self.exportar_csv).pack(side=tk.RIGHT, padx=5)
-
-        self.tree = ttk.Treeview(self.table_frame, show="headings")
-        self.tree.bind("<Double-1>", self.show_details_popup)
-        self.tree.pack(fill=tk.BOTH, expand=True)
-
-        bottom = ttk.Frame(self.table_frame)
-        bottom.pack(fill=tk.X, pady=10)
-
-        self.stats_label = ttk.Label(bottom, text="")
-        self.stats_label.pack(side=tk.LEFT, padx=10)
-
-        self.page_buttons = ttk.Frame(bottom)
-        self.page_buttons.pack(side=tk.RIGHT)
-        ttk.Button(self.page_buttons, text="Anterior", command=self.previous_page).pack(side=tk.LEFT, padx=5)
-        ttk.Button(self.page_buttons, text="Próximo", command=self.next_page).pack(side=tk.LEFT, padx=5)
-
-    def browse_file(self):
-        filename = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
-        if filename:
-            self.selected_file.set(filename)
-            self.log_message(f"Arquivo selecionado: {os.path.basename(filename)}")
-
-    def log_message(self, msg):
+    def _log(self, msg):
         self.log_text.insert(tk.END, f"{msg}\n")
         self.log_text.see(tk.END)
 
-    def validate_sheet(self, file, sheet):
-        try:
-            return sheet in pd.ExcelFile(file).sheet_names
-        except Exception as e:
-            self.log_message(f"Erro ao validar aba: {e}")
-            return False
-
-    def analyze_mrp_file(self):
+    def _run_analysis(self):
         file = self.selected_file.get()
         sheet = self.sheet_name.get()
-        if not file or not os.path.exists(file):
+
+        if not os.path.exists(file):
             messagebox.showerror("Erro", "Arquivo não encontrado.")
             return
-        if not self.validate_sheet(file, sheet):
-            messagebox.showerror("Erro", f"A aba '{sheet}' não existe no arquivo.")
+
+        if not self._validate_sheet(file, sheet):
+            messagebox.showerror("Erro", f"A aba '{sheet}' não foi encontrada.")
             return
 
         self.progress.start()
@@ -142,41 +99,87 @@ class MRPAnalyzerGUI:
 
         start = time.time()
         output_file = os.path.join(os.path.dirname(file), "itens_criticos.xlsx")
-        num_items, error, _ = analyze_mrp(file, sheet, output_file)
+        count, error, _ = analyze_mrp(file, sheet, output_file)
         self.progress.stop()
 
         if error:
-            self.log_message(f"Erro: {error}")
-            messagebox.showerror("Erro", error)
+            self._log(f"Erro: {error}")
+            messagebox.showerror("Erro de Análise", error)
         else:
-            tempo = round(time.time() - start, 2)
-            self.log_message(f"Concluído em {tempo}s. {num_items} itens críticos.")
-            self.status_label.config(text=f"Concluído em {tempo}s")
-            self.load_table_data(output_file)
+            elapsed = round(time.time() - start, 2)
+            self._log(f"Concluído em {elapsed}s. {count} itens críticos.")
+            self.status_label.config(text=f"Concluído em {elapsed}s")
+            self._load_table(output_file)
             if messagebox.askyesno("Sucesso", "Deseja abrir o arquivo gerado?"):
                 webbrowser.open(output_file)
 
-    def load_table_data(self, excel_path=None):
+    def _validate_sheet(self, file, sheet):
         try:
-            file = self.selected_file.get()
-            excel_path = excel_path or os.path.join(os.path.dirname(file), "itens_criticos.xlsx")
-            self.df_tabela = pd.read_excel(excel_path)
-            self.filter_box['values'] = list(self.df_tabela.columns)
-            self.current_page = 0
-            self.show_table_page()
+            return sheet in pd.ExcelFile(file).sheet_names
         except Exception as e:
-            self.log_message(f"Erro ao carregar tabela: {e}")
+            self._log(f"Erro ao validar aba: {e}")
+            return False
 
-    def show_table_page(self):
+    # --- ABA TABELA ---
+    def _build_table_tab(self):
+        filter_frame = ttk.Frame(self.tab_table)
+        filter_frame.pack(fill=tk.X, pady=5)
+
+        self.filter_column = tk.StringVar()
+        self.filter_value = tk.StringVar()
+        self.qtd_min = tk.StringVar()
+        self.qtd_max = tk.StringVar()
+
+        self.column_box = ttk.Combobox(filter_frame, textvariable=self.filter_column, state="readonly", width=30)
+        self.column_box.pack(side=tk.LEFT, padx=5)
+        ttk.Entry(filter_frame, textvariable=self.filter_value, width=30).pack(side=tk.LEFT)
+
+        ttk.Label(filter_frame, text="Qtd Mín:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(filter_frame, textvariable=self.qtd_min, width=6).pack(side=tk.LEFT)
+
+        ttk.Label(filter_frame, text="Qtd Máx:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(filter_frame, textvariable=self.qtd_max, width=6).pack(side=tk.LEFT)
+
+        ttk.Button(filter_frame, text="Filtrar", command=self._apply_filter).pack(side=tk.LEFT, padx=5)
+        ttk.Button(filter_frame, text="Recarregar", command=self._load_table).pack(side=tk.LEFT)
+
+        ttk.Button(filter_frame, text="Exportar Excel", command=self._export_excel).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(filter_frame, text="Exportar CSV", command=self._export_csv).pack(side=tk.RIGHT)
+
+        self.tree = ttk.Treeview(self.tab_table, show="headings")
+        self.tree.pack(fill=tk.BOTH, expand=True)
+
+        nav_frame = ttk.Frame(self.tab_table)
+        nav_frame.pack(fill=tk.X, pady=10)
+
+        self.stats_label = ttk.Label(nav_frame, text="")
+        self.stats_label.pack(side=tk.LEFT, padx=10)
+
+        btn_frame = ttk.Frame(nav_frame)
+        btn_frame.pack(side=tk.RIGHT)
+        ttk.Button(btn_frame, text="Anterior", command=self._prev_page).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Próximo", command=self._next_page).pack(side=tk.LEFT)
+
+    def _load_table(self, path=None):
+        try:
+            path = path or os.path.join(os.path.dirname(self.selected_file.get()), "itens_criticos.xlsx")
+            self.df_table = pd.read_excel(path)
+            self.column_box['values'] = list(self.df_table.columns)
+            self.current_page = 0
+            self._render_table()
+        except Exception as e:
+            self._log(f"Erro ao carregar tabela: {e}")
+
+    def _render_table(self):
         self.tree.delete(*self.tree.get_children())
-        df = self.df_tabela.copy()
+        df = self.df_table.copy()
         start = self.current_page * self.page_size
         end = start + self.page_size
         page = df.iloc[start:end]
 
         self.tree["columns"] = list(df.columns)
         for col in df.columns:
-            self.tree.heading(col, text=col, command=lambda c=col: self.sort_column(c))
+            self.tree.heading(col, text=col, command=lambda c=col: self._sort_column(c))
             self.tree.column(col, width=120, anchor="center")
 
         for _, row in page.iterrows():
@@ -186,72 +189,125 @@ class MRPAnalyzerGUI:
         soma = df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0
         media = round(df["QUANTIDADE A SOLICITAR"].mean(), 2) if "QUANTIDADE A SOLICITAR" in df.columns else 0
         top_forn = df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
-        self.stats_label.config(text=f"Total: {total} | Soma Qtd: {soma} | Média: {media} | Fornecedor Top: {top_forn}")
+        self.stats_label.config(text=f"Total: {total} | Soma: {soma} | Média: {media} | Fornecedor: {top_forn}")
 
-    def previous_page(self):
-        if self.current_page > 0:
-            self.current_page -= 1
-            self.show_table_page()
-
-    def next_page(self):
-        if (self.current_page + 1) * self.page_size < len(self.df_tabela):
-            self.current_page += 1
-            self.show_table_page()
-
-    def apply_filter(self):
-        df = self.df_tabela.copy()
+    def _apply_filter(self):
+        df = self.df_table.copy()
         col = self.filter_column.get()
-        val = self.filter_entry.get().strip().lower()
-        qtd_min = self.qtd_min.get()
-        qtd_max = self.qtd_max.get()
+        val = self.filter_value.get().strip().lower()
+        min_qtd = self.qtd_min.get()
+        max_qtd = self.qtd_max.get()
 
         if col and val:
             df = df[df[col].astype(str).str.lower().str.contains(val)]
 
         if "QUANTIDADE A SOLICITAR" in df.columns:
-            if qtd_min.isdigit():
-                df = df[df["QUANTIDADE A SOLICITAR"] >= int(qtd_min)]
-            if qtd_max.isdigit():
-                df = df[df["QUANTIDADE A SOLICITAR"] <= int(qtd_max)]
+            if min_qtd.isdigit():
+                df = df[df["QUANTIDADE A SOLICITAR"] >= int(min_qtd)]
+            if max_qtd.isdigit():
+                df = df[df["QUANTIDADE A SOLICITAR"] <= int(max_qtd)]
 
-        self.df_tabela = df
+        self.df_table = df
         self.current_page = 0
-        self.show_table_page()
+        self._render_table()
 
-    def sort_column(self, col):
-        self.df_tabela.sort_values(by=col, ascending=True, inplace=True, ignore_index=True)
+    def _sort_column(self, col):
+        self.df_table.sort_values(by=col, ascending=True, inplace=True, ignore_index=True)
         self.current_page = 0
-        self.show_table_page()
+        self._render_table()
 
-    def show_details_popup(self, event):
-        item = self.tree.selection()
-        if item:
-            values = self.tree.item(item[0], 'values')
-            colnames = self.df_tabela.columns.tolist()
-            msg = "\n".join([f"{k}: {v}" for k, v in zip(colnames, values)])
-            messagebox.showinfo("Detalhes do Item", msg)
+    def _prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._render_table()
 
-    def exportar_csv(self):
-        file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+    def _next_page(self):
+        if (self.current_page + 1) * self.page_size < len(self.df_table):
+            self.current_page += 1
+            self._render_table()
+
+    def _export_csv(self):
+        file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
         if file:
-            self.df_tabela.to_csv(file, index=False)
-            self.log_message(f"CSV exportado para: {file}")
+            self.df_table.to_csv(file, index=False)
+            self._log(f"CSV salvo: {file}")
 
-    def salvar_como_excel(self):
-        file = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
+    def _export_excel(self):
+        file = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
         if file:
-            self.df_tabela.to_excel(file, index=False)
-            self.log_message(f"Excel salvo em: {file}")
+            self.df_table.to_excel(file, index=False)
+            self._log(f"Excel salvo: {file}")
 
-    def toggle_theme(self, event=None):
-        atual = self.style.theme.name
-        novo = "darkly" if atual == "flatly" else "flatly"
-        self.style.theme_use(novo)
-        self.log_message(f"Tema alterado para: {novo}")
+    # --- ABA COMPARAÇÃO ---
+    def _build_compare_tab(self):
+        frame = ttk.Frame(self.tab_compare)
+        frame.pack(pady=10, fill=tk.X)
+
+        ttk.Button(frame, text="Selecionar Análise Anterior", command=self._load_before).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="Selecionar Análise Atual", command=self._load_after).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="Comparar", command=self._compare_files).pack(side=tk.LEFT, padx=10)
+
+        self.compare_tree = ttk.Treeview(self.tab_compare, show="headings")
+        self.compare_tree.pack(fill=tk.BOTH, expand=True)
+
+    def _load_before(self):
+        file = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
+        if file:
+            self.compare_before = pd.read_excel(file)
+            self._log(f"Análise anterior carregada: {os.path.basename(file)}")
+
+    def _load_after(self):
+        file = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
+        if file:
+            self.compare_after = pd.read_excel(file)
+            self._log(f"Análise atual carregada: {os.path.basename(file)}")
+
+    def _compare_files(self):
+        if self.compare_before is None or self.compare_after is None:
+            messagebox.showwarning("Faltando Arquivo", "Carregue as duas análises para comparar.")
+            return
+
+        before = self.compare_before.set_index("CÓD")
+        after = self.compare_after.set_index("CÓD")
+
+        all_codes = sorted(set(before.index) | set(after.index))
+        result = []
+
+        for code in all_codes:
+            row = {"CÓD": code}
+            row["DESCRIÇÃO"] = after.at[code, "DESCRIÇÃOPROMOB"] if code in after.index else before.at[code, "DESCRIÇÃOPROMOB"]
+            row["FORNECEDOR"] = after.at[code, "FORNECEDOR PRINCIPAL"] if code in after.index else before.at[code, "FORNECEDOR PRINCIPAL"]
+            q_ant = before.at[code, "QUANTIDADE A SOLICITAR"] if code in before.index else 0
+            q_atu = after.at[code, "QUANTIDADE A SOLICITAR"] if code in after.index else 0
+            row["ANTERIOR"] = q_ant
+            row["ATUAL"] = q_atu
+            row["DIFERENÇA"] = q_atu - q_ant
+
+            if code not in before.index:
+                row["STATUS"] = "Novo"
+            elif code not in after.index:
+                row["STATUS"] = "Removido"
+            elif q_ant != q_atu:
+                row["STATUS"] = "Alterado"
+            else:
+                row["STATUS"] = "Inalterado"
+
+            result.append(row)
+
+        df = pd.DataFrame(result)
+        self.compare_tree.delete(*self.compare_tree.get_children())
+        self.compare_tree["columns"] = list(df.columns)
+
+        for col in df.columns:
+            self.compare_tree.heading(col, text=col)
+            self.compare_tree.column(col, width=120, anchor="center")
+
+        for _, row in df.iterrows():
+            self.compare_tree.insert("", tk.END, values=list(row))
 
 def main():
     root = tk.Tk()
-    app = MRPAnalyzerGUI(root)
+    app = MRPGUI(root)
     root.mainloop()
 
 if __name__ == "__main__":
