@@ -44,7 +44,7 @@ def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
     try:
         df = pd.read_excel(input_file, sheet_name=sheet_name)
     except Exception as e:
-        return None, f"Erro ao ler Excel: {e}", None
+        return None, f"Error ao ler Excel: {e}", None
 
     df.columns = df.columns.str.strip().str.upper().str.replace(" ", "").str.replace(".", "", regex=False)
 
