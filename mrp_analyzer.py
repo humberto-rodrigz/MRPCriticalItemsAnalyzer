@@ -2,24 +2,32 @@ import pandas as pd
 import ibm_db
 from datetime import datetime
 import os
+import logging
+import sys
+
+# Configuração básica de logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def connect_db():
+    """Estabelece conexão com o banco de dados DB2 usando variáveis de ambiente."""
     conn_str = (
-        "DATABASE=ENGATCAR;"
-        "HOSTNAME=SEU_SERVIDOR;"  # ex: 192.168.0.10
-        "PORT=50000;"
-        "PROTOCOL=TCPIP;"
-        "UID=seu_usuario;"
-        "PWD=sua_senha;"
+        f"DATABASE=ENGATCAR;"
+        f"HOSTNAME={os.getenv('DB2_HOST', 'SEU_SERVIDOR')};"
+        f"PORT=50000;"
+        f"PROTOCOL=TCPIP;"
+        f"UID={os.getenv('DB2_USER', 'seu_usuario')};"
+        f"PWD={os.getenv('DB2_PASS', 'sua_senha')};"
     )
     try:
         conn = ibm_db.connect(conn_str, "", "")
+        logging.info("Conexão com o banco de dados estabelecida com sucesso.")
         return conn
     except Exception as e:
-        print("Erro ao conectar:", e)
+        logging.error(f"Erro ao conectar ao banco de dados: {e}")
         return None
 
 def fetch_mrp_data(conn):
+    """Busca os dados MRP do banco e retorna um DataFrame pandas."""
     sql = """
     SELECT
         CODIGO AS "CÓD",
@@ -36,16 +44,18 @@ def fetch_mrp_data(conn):
     WHERE STATUS <> 'Inativo'
     """
     stmt = ibm_db.exec_immediate(conn, sql)
-    rows = []
     col_count = ibm_db.num_fields(stmt)
     col_names = [ibm_db.field_name(stmt, i) for i in range(col_count)]
+    rows = []
     row = ibm_db.fetch_assoc(stmt)
     while row:
         rows.append(row)
         row = ibm_db.fetch_assoc(stmt)
-    return pd.DataFrame(rows, columns=col_names)
+    df = pd.DataFrame.from_records(rows, columns=col_names)
+    return df
 
 def format_excel(writer, df):
+    """Formata a planilha Excel gerada com estilos e destaques."""
     workbook = writer.book
     worksheet = writer.sheets['Itens Críticos']
 
@@ -71,7 +81,15 @@ def format_excel(writer, df):
             fmt = highlight_fmt if df.columns[col_idx] == "QUANTIDADE A SOLICITAR" and isinstance(value, (int, float)) and value > 0 else alt_row_fmt if row_idx % 2 == 0 else None
             worksheet.write(row_idx, col_idx, value, fmt)
 
+def salvar_excel_formatado(df, output_file):
+    """Salva o DataFrame em Excel formatado."""
+    writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
+    df.to_excel(writer, sheet_name="Itens Críticos", index=False)
+    format_excel(writer, df)
+    writer.close()
+
 def analyze_mrp_from_db(output_file='itens_criticos.xlsx'):
+    """Executa a análise MRP, salva resultados e histórico, retorna quantidade de itens críticos."""
     conn = connect_db()
     if not conn:
         return None, "Erro ao conectar ao banco", None
@@ -94,27 +112,27 @@ def analyze_mrp_from_db(output_file='itens_criticos.xlsx'):
         ]
         criticos = criticos[final_columns].fillna("")
 
-        writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
-        criticos.to_excel(writer, sheet_name="Itens Críticos", index=False)
-        format_excel(writer, criticos)
-        writer.close()
+        salvar_excel_formatado(criticos, output_file)
 
+        # Histórico
         hist_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
         os.makedirs(hist_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         hist_path = os.path.join(hist_dir, f"itens_criticos_{timestamp}.xlsx")
+        salvar_excel_formatado(criticos, hist_path)
 
-        hist_writer = pd.ExcelWriter(hist_path, engine='xlsxwriter')
-        criticos.to_excel(hist_writer, sheet_name="Itens Críticos", index=False)
-        format_excel(hist_writer, criticos)
-        hist_writer.close()
-
-        ibm_db.close(conn)
         return len(criticos), None, criticos
 
     except Exception as e:
-        ibm_db.close(conn)
+        logging.error(f"Erro na análise: {e}")
         return None, f"Erro na análise: {e}", None
+    finally:
+        try:
+            if conn:
+                ibm_db.close(conn)
+                logging.info("Conexão com o banco de dados fechada.")
+        except Exception as e:
+            logging.warning(f"Erro ao fechar conexão: {e}")
 
 if __name__ == "__main__":
     count, err, df = analyze_mrp_from_db()
