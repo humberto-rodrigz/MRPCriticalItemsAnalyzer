@@ -6,13 +6,16 @@ import webbrowser
 import pandas as pd
 from mrp_analyzer import analyze_mrp
 from ttkbootstrap import Style
+from ttkbootstrap.tooltip import ToolTip
 
 class MRPGUI:
     def __init__(self, root):
         self.root = root
         self.style = Style("flatly")
-        self.root.title("Analisador de Itens Críticos MRP")
+        self.root.title("MRP Critical Items Analyzer")
         self.root.geometry("1200x800")
+        self.root.minsize(900, 600)
+        self.theme = "flatly"
 
         self.selected_file = tk.StringVar()
         self.sheet_name = tk.StringVar(value="Cálculo MRP")
@@ -25,7 +28,20 @@ class MRPGUI:
 
         self._build_ui()
 
+    def _toggle_theme(self):
+        self.theme = "darkly" if self.theme == "flatly" else "flatly"
+        self.style.theme_use(self.theme)
+        self._log(f"Theme changed to: {self.theme}")
+
     def _build_ui(self):
+        # Top bar with theme switch
+        topbar = ttk.Frame(self.root)
+        topbar.pack(fill=tk.X, pady=2)
+        theme_btn = ttk.Button(topbar, text="Toggle Theme", command=self._toggle_theme)
+        theme_btn.pack(side=tk.RIGHT, padx=10)
+        ToolTip(theme_btn, text="Switch between light and dark mode (Ctrl+T)")
+        self.root.bind('<Control-t>', lambda e: self._toggle_theme())
+
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
@@ -33,52 +49,61 @@ class MRPGUI:
         self.tab_table = ttk.Frame(self.notebook, padding=15)
         self.tab_compare = ttk.Frame(self.notebook, padding=15)
 
-        self.notebook.add(self.tab_analysis, text="Análise")
-        self.notebook.add(self.tab_table, text="Tabela")
-        self.notebook.add(self.tab_compare, text="Comparação")
+        self.notebook.add(self.tab_analysis, text="Analysis")
+        self.notebook.add(self.tab_table, text="Table")
+        self.notebook.add(self.tab_compare, text="Comparison")
 
         self._build_analysis_tab()
         self._build_table_tab()
         self._build_compare_tab()
 
-    # --- ABA ANÁLISE ---
+    # --- ANALYSIS TAB ---
     def _build_analysis_tab(self):
-        form = ttk.Frame(self.tab_analysis)
-        form.pack(pady=10)
+        form = ttk.Labelframe(self.tab_analysis, text="Run Analysis", padding=10)
+        form.pack(pady=10, fill=tk.X)
 
-        ttk.Label(form, text="Arquivo Excel:").grid(row=0, column=0, sticky=tk.E)
-        ttk.Entry(form, textvariable=self.selected_file, width=60).grid(row=0, column=1, padx=5)
-        ttk.Button(form, text="Selecionar", command=self._browse_file).grid(row=0, column=2)
+        ttk.Label(form, text="Excel File:").grid(row=0, column=0, sticky=tk.E)
+        entry_file = ttk.Entry(form, textvariable=self.selected_file, width=60)
+        entry_file.grid(row=0, column=1, padx=5)
+        btn_browse = ttk.Button(form, text="Browse", command=self._browse_file)
+        btn_browse.grid(row=0, column=2)
+        ToolTip(btn_browse, text="Select the Excel file to analyze")
 
-        ttk.Label(form, text="Nome da Aba:").grid(row=1, column=0, sticky=tk.E, pady=5)
-        ttk.Entry(form, textvariable=self.sheet_name, width=30).grid(row=1, column=1, sticky=tk.W, pady=5)
+        ttk.Label(form, text="Sheet Name:").grid(row=1, column=0, sticky=tk.E, pady=5)
+        entry_sheet = ttk.Entry(form, textvariable=self.sheet_name, width=30)
+        entry_sheet.grid(row=1, column=1, sticky=tk.W, pady=5)
+        ToolTip(entry_sheet, text="Enter the worksheet name (e.g., Cálculo MRP)")
 
-        ttk.Button(form, text="Executar Análise", command=self._run_analysis).grid(row=2, column=0, columnspan=3, pady=10)
+        btn_run = ttk.Button(form, text="Run Analysis", command=self._run_analysis, bootstyle="success")
+        btn_run.grid(row=2, column=0, columnspan=3, pady=10)
+        ToolTip(btn_run, text="Start the MRP analysis")
 
         self.progress = ttk.Progressbar(form, mode="indeterminate")
         self.progress.grid(row=3, column=0, columnspan=3, sticky=tk.EW)
 
-        self.status_label = ttk.Label(form, text="")
+        self.status_label = ttk.Label(form, text="", font=("Segoe UI", 10, "bold"))
         self.status_label.grid(row=4, column=0, columnspan=3, pady=5)
 
         ttk.Label(self.tab_analysis, text="Log:").pack(anchor=tk.W, padx=10)
         log_frame = ttk.Frame(self.tab_analysis)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD)
+        self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD, bg="#f8f9fa", fg="#222")
         scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.config(yscrollcommand=scrollbar.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _browse_file(self):
-        file = filedialog.askopenfilename(filetypes=[("Planilhas Excel", "*.xlsx *.xls")])
+        file = filedialog.askopenfilename(filetypes=[("Excel Spreadsheets", "*.xlsx *.xls")])
         if file:
             self.selected_file.set(file)
-            self._log(f"Arquivo selecionado: {os.path.basename(file)}")
+            self._log(f"Selected file: {os.path.basename(file)}", "info")
 
-    def _log(self, msg):
-        self.log_text.insert(tk.END, f"{msg}\n")
+    def _log(self, msg, level="info"):
+        color = {"info": "#222", "success": "#155724", "error": "#721c24"}.get(level, "#222")
+        self.log_text.insert(tk.END, f"{msg}\n", (level,))
+        self.log_text.tag_config(level, foreground=color)
         self.log_text.see(tk.END)
 
     def _run_analysis(self):
@@ -86,15 +111,17 @@ class MRPGUI:
         sheet = self.sheet_name.get()
 
         if not os.path.exists(file):
-            messagebox.showerror("Erro", "Arquivo não encontrado.")
+            messagebox.showerror("Error", "File not found.")
+            self._log("File not found.", "error")
             return
 
         if not self._validate_sheet(file, sheet):
-            messagebox.showerror("Erro", f"A aba '{sheet}' não foi encontrada.")
+            messagebox.showerror("Error", f"Sheet '{sheet}' not found.")
+            self._log(f"Sheet '{sheet}' not found.", "error")
             return
 
         self.progress.start()
-        self.status_label.config(text="Analisando...")
+        self.status_label.config(text="Analyzing...", foreground="#007bff")
         self.root.update_idletasks()
 
         start = time.time()
@@ -103,26 +130,28 @@ class MRPGUI:
         self.progress.stop()
 
         if error:
-            self._log(f"Erro: {error}")
-            messagebox.showerror("Erro de Análise", error)
+            self._log(f"Error: {error}", "error")
+            self.status_label.config(text="Analysis failed.", foreground="#dc3545")
+            messagebox.showerror("Analysis Error", error)
         else:
             elapsed = round(time.time() - start, 2)
-            self._log(f"Concluído em {elapsed}s. {count} itens críticos.")
-            self.status_label.config(text=f"Concluído em {elapsed}s")
+            self._log(f"Completed in {elapsed}s. {count} critical items.", "success")
+            self.status_label.config(text=f"Completed in {elapsed}s", foreground="#28a745")
             self._load_table(output_file)
-            if messagebox.askyesno("Sucesso", "Deseja abrir o arquivo gerado?"):
+            self.notebook.select(self.tab_table)
+            if messagebox.askyesno("Success", "Do you want to open the generated file?"):
                 webbrowser.open(output_file)
 
     def _validate_sheet(self, file, sheet):
         try:
             return sheet in pd.ExcelFile(file).sheet_names
         except Exception as e:
-            self._log(f"Erro ao validar aba: {e}")
+            self._log(f"Error validating sheet: {e}", "error")
             return False
 
-    # --- ABA TABELA ---
+    # --- TABLE TAB ---
     def _build_table_tab(self):
-        filter_frame = ttk.Frame(self.tab_table)
+        filter_frame = ttk.Labelframe(self.tab_table, text="Filter & Export", padding=10)
         filter_frame.pack(fill=tk.X, pady=5)
 
         self.filter_column = tk.StringVar()
@@ -132,19 +161,34 @@ class MRPGUI:
 
         self.column_box = ttk.Combobox(filter_frame, textvariable=self.filter_column, state="readonly", width=30)
         self.column_box.pack(side=tk.LEFT, padx=5)
-        ttk.Entry(filter_frame, textvariable=self.filter_value, width=30).pack(side=tk.LEFT)
+        ToolTip(self.column_box, text="Select column to filter")
+        entry_filter = ttk.Entry(filter_frame, textvariable=self.filter_value, width=30)
+        entry_filter.pack(side=tk.LEFT)
+        ToolTip(entry_filter, text="Enter value to filter")
 
-        ttk.Label(filter_frame, text="Qtd Mín:").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(filter_frame, textvariable=self.qtd_min, width=6).pack(side=tk.LEFT)
+        ttk.Label(filter_frame, text="Min Qty:").pack(side=tk.LEFT, padx=2)
+        entry_min = ttk.Entry(filter_frame, textvariable=self.qtd_min, width=6)
+        entry_min.pack(side=tk.LEFT)
+        ToolTip(entry_min, text="Minimum quantity to request")
 
-        ttk.Label(filter_frame, text="Qtd Máx:").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(filter_frame, textvariable=self.qtd_max, width=6).pack(side=tk.LEFT)
+        ttk.Label(filter_frame, text="Max Qty:").pack(side=tk.LEFT, padx=2)
+        entry_max = ttk.Entry(filter_frame, textvariable=self.qtd_max, width=6)
+        entry_max.pack(side=tk.LEFT)
+        ToolTip(entry_max, text="Maximum quantity to request")
 
-        ttk.Button(filter_frame, text="Filtrar", command=self._apply_filter).pack(side=tk.LEFT, padx=5)
-        ttk.Button(filter_frame, text="Recarregar", command=self._load_table).pack(side=tk.LEFT)
+        btn_filter = ttk.Button(filter_frame, text="Apply Filter", command=self._apply_filter)
+        btn_filter.pack(side=tk.LEFT, padx=5)
+        ToolTip(btn_filter, text="Apply filter to table")
+        btn_reload = ttk.Button(filter_frame, text="Reload", command=self._load_table)
+        btn_reload.pack(side=tk.LEFT)
+        ToolTip(btn_reload, text="Reload table from file")
 
-        ttk.Button(filter_frame, text="Exportar Excel", command=self._export_excel).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(filter_frame, text="Exportar CSV", command=self._export_csv).pack(side=tk.RIGHT)
+        btn_export_excel = ttk.Button(filter_frame, text="Export Excel", command=self._export_excel)
+        btn_export_excel.pack(side=tk.RIGHT, padx=5)
+        ToolTip(btn_export_excel, text="Export table to Excel file")
+        btn_export_csv = ttk.Button(filter_frame, text="Export CSV", command=self._export_csv)
+        btn_export_csv.pack(side=tk.RIGHT)
+        ToolTip(btn_export_csv, text="Export table to CSV file")
 
         self.tree = ttk.Treeview(self.tab_table, show="headings")
         self.tree.pack(fill=tk.BOTH, expand=True)
@@ -157,8 +201,12 @@ class MRPGUI:
 
         btn_frame = ttk.Frame(nav_frame)
         btn_frame.pack(side=tk.RIGHT)
-        ttk.Button(btn_frame, text="Anterior", command=self._prev_page).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Próximo", command=self._next_page).pack(side=tk.LEFT)
+        btn_prev = ttk.Button(btn_frame, text="Previous", command=self._prev_page)
+        btn_prev.pack(side=tk.LEFT, padx=5)
+        ToolTip(btn_prev, text="Previous page")
+        btn_next = ttk.Button(btn_frame, text="Next", command=self._next_page)
+        btn_next.pack(side=tk.LEFT)
+        ToolTip(btn_next, text="Next page")
 
     def _load_table(self, path=None):
         try:
@@ -168,7 +216,7 @@ class MRPGUI:
             self.current_page = 0
             self._render_table()
         except Exception as e:
-            self._log(f"Erro ao carregar tabela: {e}")
+            self._log(f"Error loading table: {e}", "error")
 
     def _render_table(self):
         self.tree.delete(*self.tree.get_children())
@@ -189,7 +237,7 @@ class MRPGUI:
         soma = df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0
         media = round(df["QUANTIDADE A SOLICITAR"].mean(), 2) if "QUANTIDADE A SOLICITAR" in df.columns else 0
         top_forn = df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
-        self.stats_label.config(text=f"Total: {total} | Soma: {soma} | Média: {media} | Fornecedor: {top_forn}")
+        self.stats_label.config(text=f"Total: {total} | Sum: {soma} | Avg: {media} | Top Supplier: {top_forn}")
 
     def _apply_filter(self):
         df = self.df_table.copy()
@@ -230,22 +278,30 @@ class MRPGUI:
         file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
         if file:
             self.df_table.to_csv(file, index=False)
-            self._log(f"CSV salvo: {file}")
+            self._log(f"CSV saved: {file}", "success")
+            messagebox.showinfo("Export", f"CSV file saved: {file}")
 
     def _export_excel(self):
         file = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
         if file:
             self.df_table.to_excel(file, index=False)
-            self._log(f"Excel salvo: {file}")
+            self._log(f"Excel saved: {file}", "success")
+            messagebox.showinfo("Export", f"Excel file saved: {file}")
 
-    # --- ABA COMPARAÇÃO ---
+    # --- COMPARISON TAB ---
     def _build_compare_tab(self):
-        frame = ttk.Frame(self.tab_compare)
+        frame = ttk.Labelframe(self.tab_compare, text="Compare Analyses", padding=10)
         frame.pack(pady=10, fill=tk.X)
 
-        ttk.Button(frame, text="Selecionar Análise Anterior", command=self._load_before).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="Selecionar Análise Atual", command=self._load_after).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="Comparar", command=self._compare_files).pack(side=tk.LEFT, padx=10)
+        btn_before = ttk.Button(frame, text="Select Previous Analysis", command=self._load_before)
+        btn_before.pack(side=tk.LEFT, padx=5)
+        ToolTip(btn_before, text="Select the previous analysis Excel file")
+        btn_after = ttk.Button(frame, text="Select Current Analysis", command=self._load_after)
+        btn_after.pack(side=tk.LEFT, padx=5)
+        ToolTip(btn_after, text="Select the current analysis Excel file")
+        btn_compare = ttk.Button(frame, text="Compare", command=self._compare_files, bootstyle="info")
+        btn_compare.pack(side=tk.LEFT, padx=10)
+        ToolTip(btn_compare, text="Compare the two analyses")
 
         self.compare_tree = ttk.Treeview(self.tab_compare, show="headings")
         self.compare_tree.pack(fill=tk.BOTH, expand=True)
@@ -254,17 +310,18 @@ class MRPGUI:
         file = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
         if file:
             self.compare_before = pd.read_excel(file)
-            self._log(f"Análise anterior carregada: {os.path.basename(file)}")
+            self._log(f"Previous analysis loaded: {os.path.basename(file)}", "info")
 
     def _load_after(self):
         file = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
         if file:
             self.compare_after = pd.read_excel(file)
-            self._log(f"Análise atual carregada: {os.path.basename(file)}")
+            self._log(f"Current analysis loaded: {os.path.basename(file)}", "info")
 
     def _compare_files(self):
         if self.compare_before is None or self.compare_after is None:
-            messagebox.showwarning("Faltando Arquivo", "Carregue as duas análises para comparar.")
+            messagebox.showwarning("Missing File", "Load both analyses to compare.")
+            self._log("Both analyses must be loaded for comparison.", "error")
             return
 
         before = self.compare_before.set_index("CÓD")
@@ -284,13 +341,13 @@ class MRPGUI:
             row["DIFERENÇA"] = q_atu - q_ant
 
             if code not in before.index:
-                row["STATUS"] = "Novo"
+                row["STATUS"] = "New"
             elif code not in after.index:
-                row["STATUS"] = "Removido"
+                row["STATUS"] = "Removed"
             elif q_ant != q_atu:
-                row["STATUS"] = "Alterado"
+                row["STATUS"] = "Changed"
             else:
-                row["STATUS"] = "Inalterado"
+                row["STATUS"] = "Unchanged"
 
             result.append(row)
 
