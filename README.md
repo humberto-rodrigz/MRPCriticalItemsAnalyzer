@@ -2,109 +2,45 @@
 
 # 📊 MRP Critical Items Analyzer
 
-A desktop application built with Python and a graphical interface to analyze and visualize critical items from an MRP (Material Requirements Planning) spreadsheet. Offers interactive filtering, charting, exporting, and quick statistics — all in a clean and modern interface.
+This program analyzes and identifies critical items in a Material Requirements Planning (MRP) process. It connects to a database or reads from an Excel spreadsheet, processes inventory and demand data, and generates a report highlighting items that require urgent attention or replenishment.
+
+**Main features:**
+- Calculates available stock and compares it to demand and safety stock.
+- Identifies items with insufficient stock to meet requirements.
+- Suggests the quantity to order for each critical item.
+- Exports the results to a formatted Excel file for easy review and sharing.
+- Maintains a historical log of each analysis for traceability.
+
+The program is designed to help companies quickly visualize and act on their most urgent material needs, improving supply chain efficiency and reducing the risk of stockouts.
 
 ---
 
-## 🖥️ Features
-
-- Load and analyze Excel `.xlsx` spreadsheets
-- Interactive bar chart showing quantities to request
-- Table view with:
-  - Column filtering
-  - Clickable column headers for sorting
-  - Pagination (50 items per page)
-  - Summary statistics
-  - Export to `.csv` or `.xlsx`
-  - Double-click to view detailed item information
-- Light/dark theme toggle (`Ctrl+T`)
-
----
-
-## ⚙️ Installation (Developer Mode)
+## ⚙️ Installation Tutorial
 
 > Requires Python 3.9 or higher.
 
-1. **Clone the repository**:
+1. **Clone the repository:**
    ```bash
    git clone https://github.com/humberto-rodrigz/MRPCriticalItemsAnalyzer
-   cd your-repo
+   cd MRPCriticalItemsAnalyzer
    ```
 
-2. **Create a virtual environment (recommended)**:
+2. **Create a virtual environment (recommended):**
    ```bash
    python -m venv venv
-   venv\Scripts\activate  # Windows
-   source venv/bin/activate  # macOS/Linux
+   venv\Scripts\activate  # On Windows
+   source venv/bin/activate  # On macOS/Linux
    ```
 
-3. **Install dependencies**:
+3. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Run the app**:
+4. **Run the application:**
    ```bash
    python mrp_gui.py
    ```
-
----
-
-## 📦 Building the `.exe` Executable (Windows)
-
-1. Install PyInstaller:
-   ```bash
-   pip install pyinstaller
-   ```
-
-2. Build the executable:
-   ```bash
-   pyinstaller --noconfirm --onefile --windowed mrp_gui.py
-   ```
-
-3. The executable will be available in:
-   ```
-   dist/mrp_gui.exe
-   ```
-
----
-
-## 📁 Expected Spreadsheet Format
-
-The worksheet must contain the following columns (names must match exactly):
-
-- `CÓD`
-- `DESCRIÇÃOPROMOB`
-- `ESTOQ10`
-- `ESTOQ20`
-- `DEMANDAMRP`
-- `ESTOQSEG`
-- `STATUS`
-- `FORNECEDORPRINCIPAL`
-- `PEDIDOS`
-- `OBS`
-
-These can be in any order, as long as the column headers match.
-
----
-
-## 🧪 How to Use
-
-1. Open the application.
-2. Select the Excel spreadsheet.
-3. Enter the worksheet name (e.g., `Cálculo MRP`).
-4. Click **Analyze MRP**.
-5. Review the results via the **Chart** and **Table** tabs.
-
----
-
-## 🧱 Tech Stack
-
-- **Python 3**
-- **Tkinter + ttkbootstrap** (GUI)
-- **Pandas + XlsxWriter** (data processing)
-- **Matplotlib** (chart rendering)
-- **PyInstaller** (packaging into executable)
 
 ---
 
@@ -116,4 +52,4 @@ MIT License — see [`LICENSE`](LICENSE) for details.
 
 ## ✨ Author
 
-Developed by **Humberto Rodrigues** — Fullstack Developer focused on frontend solutions.
+Developed by **Humberto Rodrigues** — Fullstack Developer.
