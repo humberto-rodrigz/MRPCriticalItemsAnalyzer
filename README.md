@@ -27,7 +27,7 @@ A desktop application built with Python and a graphical interface to analyze and
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-user/your-repo.git
+   git clone https://github.com/humberto-rodrigz/MRPCriticalItemsAnalyzer
    cd your-repo
    ```
 
