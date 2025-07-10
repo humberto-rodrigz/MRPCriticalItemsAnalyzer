@@ -95,7 +95,7 @@ def analyze_mrp(input_file, sheet_name, output_file='itens_criticos.xlsx'):
 
         return len(criticos), None, criticos
     except Exception as e:
-        return None, f"Erro ao salvar Excel: {e}", None
+        return None, f"Error ao salvar Excel: {e}", None
 
 if __name__ == "__main__":
     print("Use: analyze_mrp(input_file, sheet_name)")
