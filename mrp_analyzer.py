@@ -114,7 +114,6 @@ def analyze_mrp_from_db(output_file='itens_criticos.xlsx'):
 
         salvar_excel_formatado(criticos, output_file)
 
-        # Histórico
         hist_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
         os.makedirs(hist_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
