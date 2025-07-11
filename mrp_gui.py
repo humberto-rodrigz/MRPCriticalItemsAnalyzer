@@ -149,7 +149,6 @@ class MRPGUI:
             self._log(f"Error validating sheet: {e}", "error")
             return False
 
-    # --- TABLE TAB ---
     def _build_table_tab(self):
         filter_frame = ttk.Labelframe(self.tab_table, text="Filter & Export", padding=10)
         filter_frame.pack(fill=tk.X, pady=5)
