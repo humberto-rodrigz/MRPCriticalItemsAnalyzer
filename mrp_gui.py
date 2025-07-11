@@ -34,7 +34,6 @@ class MRPGUI:
         self._log(f"Theme changed to: {self.theme}")
 
     def _build_ui(self):
-        # Top bar with theme switch
         topbar = ttk.Frame(self.root)
         topbar.pack(fill=tk.X, pady=2)
         theme_btn = ttk.Button(topbar, text="Toggle Theme", command=self._toggle_theme)
@@ -57,7 +56,6 @@ class MRPGUI:
         self._build_table_tab()
         self._build_compare_tab()
 
-    # --- ANALYSIS TAB ---
     def _build_analysis_tab(self):
         form = ttk.Labelframe(self.tab_analysis, text="Run Analysis", padding=10)
         form.pack(pady=10, fill=tk.X)
