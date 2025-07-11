@@ -285,7 +285,6 @@ class MRPGUI:
             self._log(f"Excel saved: {file}", "success")
             messagebox.showinfo("Export", f"Excel file saved: {file}")
 
-    # --- COMPARISON TAB ---
     def _build_compare_tab(self):
         frame = ttk.Labelframe(self.tab_compare, text="Compare Analyses", padding=10)
         frame.pack(pady=10, fill=tk.X)
