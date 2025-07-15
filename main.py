@@ -15,3 +15,12 @@ def salvar_excel_formatado(df, output_file):
     writer.close()  
 
 
+def format_excel(writer, df):   
+
+    ()  
+
+    directory = os.path.dirname(writer.path)
+    if not os.path.exists(directory):   
+        os.makedirs(directory)  
+
+
