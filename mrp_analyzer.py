@@ -5,7 +5,6 @@ import os
 import logging
 import sys
 
-# Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def connect_db():

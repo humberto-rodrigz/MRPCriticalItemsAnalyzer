@@ -8,6 +8,7 @@ from mrp_analyzer import analyze_mrp
 from ttkbootstrap import Style
 from ttkbootstrap.tooltip import ToolTip
 
+
 class MRPGUI:
     def __init__(self, root):
         self.root = root
