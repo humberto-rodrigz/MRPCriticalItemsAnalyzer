@@ -82,7 +82,6 @@ def format_excel(writer, df):
             worksheet.write(row_idx, col_idx, value, fmt)
 
 def salvar_excel_formatado(df, output_file):
-    """Salva o DataFrame em Excel formatado."""
     writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
     df.to_excel(writer, sheet_name="Itens Críticos", index=False)
     format_excel(writer, df)
