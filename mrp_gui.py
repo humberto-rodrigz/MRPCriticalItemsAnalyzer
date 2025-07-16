@@ -364,5 +364,13 @@ def main():
     app = MRPGUI(root)
     root.mainloop()
 
+def set_style():
+    style = Style("flatly")
+    style.configure("TButton", padding=5, relief="flat")
+    style.configure("TLabel", padding=5)
+    style.configure("TEntry", padding=5)
+    style.configure("TFrame", padding=10)
+    return style
+
 if __name__ == "__main__":
     main()
