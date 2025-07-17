@@ -34,4 +34,12 @@ def salvar_excel_formatado(df, output_file):
     worksheet = writer.sheets["Itens Críticos"]
     cell_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
     header_format = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#D9EAD3'})
-
+    worksheet.set_column('A:A', 20, cell_format)
+    worksheet.set_column('B:B', 15, cell_format)
+    worksheet.set_column('C:C', 15, cell_format)
+    worksheet.set_column('D:D', 15, cell_format)
+    worksheet.set_column('E:E', 15, cell_format)
+    worksheet.set_column('F:F', 15, cell_format)
+    worksheet.set_column('G:G', 15, cell_format)
+    worksheet.set_column('H:H', 15, cell_format)
+    worksheet.set_column('I:I', 15, cell_format)
