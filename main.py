@@ -43,3 +43,28 @@ def salvar_excel_formatado(df, output_file):
     worksheet.set_column('G:G', 15, cell_format)
     worksheet.set_column('H:H', 15, cell_format)
     worksheet.set_column('I:I', 15, cell_format)
+
+
+    def main():     
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info("Iniciando o script de análise MRP")   
+    try:
+        conn = connect_db()
+        if not conn:
+            logging.error("Erro ao conectar ao banco de dados.")
+            return
+
+        mrp_data = fetch_mrp_data(conn)
+        if mrp_data.empty:
+            logging.info("Nenhum dado MRP encontrado.")
+            return
+
+        output_file = "output/mrp_analysis.xlsx"
+        salvar_excel_formatado(mrp_data, output_file)
+        logging.info(f"Arquivo salvo em: {output_file}")
+
+    except Exception as e:
+        logging.error(f"Erro ao executar o script: {e}")
+    finally:
+        if conn:
+            ibm_db.close(conn)
