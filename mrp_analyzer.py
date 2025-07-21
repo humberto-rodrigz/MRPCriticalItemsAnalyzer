@@ -79,7 +79,6 @@ def salvar_excel_formatado(df, output_file):
     writer.close()
 
 if __name__ == "__main__":
-    # Exemplo de uso: python mrp_analyzer.py arquivo.xlsx "Cálculo MRP"
     import sys
     if len(sys.argv) >= 3:
         input_file = sys.argv[1]

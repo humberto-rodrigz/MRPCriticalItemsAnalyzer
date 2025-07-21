@@ -52,4 +52,4 @@ MIT License — see [`LICENSE`](LICENSE) for details.
 
 ## ✨ Author
 
-Developed by **Humberto Rodrigues** — Fullstack Developer.
+Maintained by [@humberto-rodrigz](https://github.com/humberto-rodrigz).
