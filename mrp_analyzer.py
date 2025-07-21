@@ -13,7 +13,6 @@ def analyze_mrp_from_excel(input_file, sheet_name, output_file='itens_criticos.x
         df = pd.read_excel(input_file, sheet_name=sheet_name)
         # Normaliza nomes de colunas para evitar erros de digitação
         df.columns = [col.strip().upper() for col in df.columns]
-        # Checa se todas as colunas necessárias existem
         required_cols = [
             "CÓD", "DESCRIÇÃOPROMOB", "ESTQ10", "ESTQ20", "DEMANDAMRP", "ESTOQSEG", "FORNECEDORPRINCIPAL", "PEDIDOS", "OBS"
         ]
@@ -34,7 +33,6 @@ def analyze_mrp_from_excel(input_file, sheet_name, output_file='itens_criticos.x
         ]
         criticos = criticos[final_columns].fillna("")
         salvar_excel_formatado(criticos, output_file)
-        # Histórico
         hist_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
         os.makedirs(hist_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
