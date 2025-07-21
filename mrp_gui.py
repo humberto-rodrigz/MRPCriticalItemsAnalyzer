@@ -40,6 +40,8 @@ class MRPGUI:
         theme_btn = ttk.Button(topbar, text="Toggle Theme", command=self._toggle_theme)
         theme_btn.pack(side=tk.RIGHT, padx=10)
         ToolTip(theme_btn, text="Switch between light and dark mode (Ctrl+T)")
+        about_btn = ttk.Button(topbar, text="About", command=self._show_about)
+        about_btn.pack(side=tk.RIGHT, padx=10)
         self.root.bind('<Control-t>', lambda e: self._toggle_theme())
 
         self.notebook = ttk.Notebook(self.root)
@@ -352,12 +354,31 @@ class MRPGUI:
         self.compare_tree.delete(*self.compare_tree.get_children())
         self.compare_tree["columns"] = list(df.columns)
 
+        # Melhorias: colorir linhas por status e ajustar largura automática
+        status_colors = {
+            "New": "#d4edda",
+            "Removed": "#f8d7da",
+            "Changed": "#fff3cd",
+            "Unchanged": "#f9f9f9"
+        }
         for col in df.columns:
             self.compare_tree.heading(col, text=col)
             self.compare_tree.column(col, width=120, anchor="center")
-
         for _, row in df.iterrows():
-            self.compare_tree.insert("", tk.END, values=list(row))
+            tag = row["STATUS"]
+            self.compare_tree.insert("", tk.END, values=list(row), tags=(tag,))
+        for status, color in status_colors.items():
+            self.compare_tree.tag_configure(status, background=color)
+        # Ajuste automático de largura
+        for col in df.columns:
+            max_len = max([len(str(x)) for x in df[col].values] + [len(col)])
+            self.compare_tree.column(col, width=min(200, max(80, max_len * 10)))
+
+    def _show_about(self):
+        messagebox.showinfo(
+            "About",
+            "MRP Critical Items Analyzer\n\nDeveloped by Humberto Rodrigues.\nModern UI, color feedback, and Excel/CSV export.\n2025"
+        )
 
 def main():
     root = tk.Tk()
