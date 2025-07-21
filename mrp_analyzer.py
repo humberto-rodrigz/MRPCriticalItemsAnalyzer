@@ -1,57 +1,49 @@
 import pandas as pd
-import ibm_db
 from datetime import datetime
 import os
 import logging
-import sys
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def connect_db():
-    """Estabelece conexão com o banco de dados DB2 usando variáveis de ambiente."""
-    conn_str = (
-        f"DATABASE=ENGATCAR;"
-        f"HOSTNAME={os.getenv('DB2_HOST', 'SEU_SERVIDOR')};"
-        f"PORT=50000;"
-        f"PROTOCOL=TCPIP;"
-        f"UID={os.getenv('DB2_USER', 'seu_usuario')};"
-        f"PWD={os.getenv('DB2_PASS', 'sua_senha')};"
-    )
-    try:
-        conn = ibm_db.connect(conn_str, "", "")
-        logging.info("Conexão com o banco de dados estabelecida com sucesso.")
-        return conn
-    except Exception as e:
-        logging.error(f"Erro ao conectar ao banco de dados: {e}")
-        return None
-
-def fetch_mrp_data(conn):
-    """Busca os dados MRP do banco e retorna um DataFrame pandas."""
-    sql = """
-    SELECT
-        CODIGO AS "CÓD",
-        DESCRICAO AS "DESCRIÇÃOPROMOB",
-        ESTQ10,
-        ESTQ20,
-        DEMANDA AS "DEMANDAMRP",
-        ESTQSEG AS "ESTOQSEG",
-        STATUS,
-        FORNECEDOR AS "FORNECEDORPRINCIPAL",
-        PEDIDOS,
-        OBSERVACAO AS "OBS"
-    FROM TABELA_MRP
-    WHERE STATUS <> 'Inativo'
+def analyze_mrp_from_excel(input_file, sheet_name, output_file='itens_criticos.xlsx'):
     """
-    stmt = ibm_db.exec_immediate(conn, sql)
-    col_count = ibm_db.num_fields(stmt)
-    col_names = [ibm_db.field_name(stmt, i) for i in range(col_count)]
-    rows = []
-    row = ibm_db.fetch_assoc(stmt)
-    while row:
-        rows.append(row)
-        row = ibm_db.fetch_assoc(stmt)
-    df = pd.DataFrame.from_records(rows, columns=col_names)
-    return df
+    Realiza a análise MRP a partir de um arquivo Excel, salva resultados e histórico, retorna quantidade de itens críticos.
+    """
+    try:
+        df = pd.read_excel(input_file, sheet_name=sheet_name)
+        # Normaliza nomes de colunas para evitar erros de digitação
+        df.columns = [col.strip().upper() for col in df.columns]
+        # Checa se todas as colunas necessárias existem
+        required_cols = [
+            "CÓD", "DESCRIÇÃOPROMOB", "ESTQ10", "ESTQ20", "DEMANDAMRP", "ESTOQSEG", "FORNECEDORPRINCIPAL", "PEDIDOS", "OBS"
+        ]
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Coluna obrigatória ausente: {col}")
+        df["ESTOQUE DISPONÍVEL"] = df["ESTQ10"] + (df["ESTQ20"] / 3)
+        criticos = df[(df["ESTOQUE DISPONÍVEL"] - df["DEMANDAMRP"]) < df["ESTOQSEG"]].copy()
+        criticos["QUANTIDADE A SOLICITAR"] = (
+            criticos["DEMANDAMRP"] - criticos["ESTOQUE DISPONÍVEL"] + criticos["ESTOQSEG"] - criticos["PEDIDOS"]
+        ).clip(lower=0).round().astype(int)
+        criticos["FORNECEDOR PRINCIPAL"] = criticos["FORNECEDORPRINCIPAL"]
+        criticos["ESTOQUE DISPONÍVEL"] = criticos["ESTOQUE DISPONÍVEL"].round().astype(int)
+        final_columns = [
+            "CÓD", "FORNECEDOR PRINCIPAL", "DESCRIÇÃOPROMOB", "ESTQ10", "ESTQ20",
+            "DEMANDAMRP", "ESTOQSEG", "PEDIDOS", "ESTOQUE DISPONÍVEL",
+            "QUANTIDADE A SOLICITAR", "OBS"
+        ]
+        criticos = criticos[final_columns].fillna("")
+        salvar_excel_formatado(criticos, output_file)
+        # Histórico
+        hist_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
+        os.makedirs(hist_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        hist_path = os.path.join(hist_dir, f"itens_criticos_{timestamp}.xlsx")
+        salvar_excel_formatado(criticos, hist_path)
+        return len(criticos), None, criticos
+    except Exception as e:
+        logging.error(f"Erro na análise: {e}")
+        return None, f"Erro na análise: {e}", None
 
 def format_excel(writer, df):
     """Formata a planilha Excel gerada com estilos e destaques."""
@@ -86,54 +78,16 @@ def salvar_excel_formatado(df, output_file):
     format_excel(writer, df)
     writer.close()
 
-def analyze_mrp_from_db(output_file='itens_criticos.xlsx'):
-    """Executa a análise MRP, salva resultados e histórico, retorna quantidade de itens críticos."""
-    conn = connect_db()
-    if not conn:
-        return None, "Erro ao conectar ao banco", None
-
-    try:
-        df = fetch_mrp_data(conn)
-        df["ESTOQUE DISPONÍVEL"] = df["ESTQ10"] + (df["ESTQ20"] / 3)
-        criticos = df[(df["ESTOQUE DISPONÍVEL"] - df["DEMANDAMRP"]) < df["ESTOQSEG"]].copy()
-        criticos["QUANTIDADE A SOLICITAR"] = (
-            criticos["DEMANDAMRP"] - criticos["ESTOQUE DISPONÍVEL"] + criticos["ESTOQSEG"] - criticos["PEDIDOS"]
-        ).clip(lower=0).round().astype(int)
-
-        criticos["FORNECEDOR PRINCIPAL"] = criticos["FORNECEDORPRINCIPAL"]
-        criticos["ESTOQUE DISPONÍVEL"] = criticos["ESTOQUE DISPONÍVEL"].round().astype(int)
-
-        final_columns = [
-            "CÓD", "FORNECEDOR PRINCIPAL", "DESCRIÇÃOPROMOB", "ESTQ10", "ESTQ20",
-            "DEMANDAMRP", "ESTOQSEG", "PEDIDOS", "ESTOQUE DISPONÍVEL",
-            "QUANTIDADE A SOLICITAR", "OBS"
-        ]
-        criticos = criticos[final_columns].fillna("")
-
-        salvar_excel_formatado(criticos, output_file)
-
-        hist_dir = os.path.join(os.path.dirname(output_file), "historico_mrp")
-        os.makedirs(hist_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        hist_path = os.path.join(hist_dir, f"itens_criticos_{timestamp}.xlsx")
-        salvar_excel_formatado(criticos, hist_path)
-
-        return len(criticos), None, criticos
-
-    except Exception as e:
-        logging.error(f"Erro na análise: {e}")
-        return None, f"Erro na análise: {e}", None
-    finally:
-        try:
-            if conn:
-                ibm_db.close(conn)
-                logging.info("Conexão com o banco de dados fechada.")
-        except Exception as e:
-            logging.warning(f"Erro ao fechar conexão: {e}")
-
 if __name__ == "__main__":
-    count, err, df = analyze_mrp_from_db()
-    if err:
-        print("Erro:", err)
+    # Exemplo de uso: python mrp_analyzer.py arquivo.xlsx "Cálculo MRP"
+    import sys
+    if len(sys.argv) >= 3:
+        input_file = sys.argv[1]
+        sheet_name = sys.argv[2]
+        count, err, df = analyze_mrp_from_excel(input_file, sheet_name)
+        if err:
+            print("Erro:", err)
+        else:
+            print(f"{count} itens críticos identificados.")
     else:
-        print(f"{count} itens críticos identificados.")
+        print("Uso: python mrp_analyzer.py <arquivo.xlsx> <nome_da_aba>")
