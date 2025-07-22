@@ -2,32 +2,104 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import os
 import time
+import json
 import webbrowser
+from pathlib import Path
+from datetime import datetime
 import pandas as pd
 from mrp_analyzer import analyze_mrp
 from ttkbootstrap import Style
 from ttkbootstrap.tooltip import ToolTip
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
+@dataclass
+class AppConfig:
+    """Classe para gerenciar configurações do aplicativo."""
+    last_directory: str = ""
+    theme: str = "flatly"
+    page_size: int = 50
+    sheet_name: str = "Cálculo MRP"
+    window_size: tuple = (1200, 800)
+    
+    @classmethod
+    def load(cls) -> 'AppConfig':
+        """Carrega configurações do arquivo."""
+        config_path = Path.home() / '.mrp_analyzer' / 'config.json'
+        if config_path.exists():
+            with open(config_path) as f:
+                return cls(**json.load(f))
+        return cls()
+    
+    def save(self) -> None:
+        """Salva configurações em arquivo."""
+        config_path = Path.home() / '.mrp_analyzer' / 'config.json'
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w') as f:
+            json.dump(self.__dict__, f)
+
+class AppState:
+    """Classe para gerenciar o estado da aplicação."""
+    def __init__(self):
+        self.config = AppConfig.load()
+        self.df_table = pd.DataFrame()
+        self.current_page = 0
+        self.filter_applied = False
+        self.last_sort_column = None
+        self.sort_ascending = True
+        
+    def save_state(self):
+        """Salva o estado atual da aplicação."""
+        self.config.save()
 
 
 class MRPGUI:
     def __init__(self, root):
         self.root = root
-        self.style = Style("flatly")
+        self.state = AppState()
+        self.style = Style(self.state.config.theme)
+        
         self.root.title("MRP Critical Items Analyzer")
-        self.root.geometry("1200x800")
+        self.root.geometry(f"{self.state.config.window_size[0]}x{self.state.config.window_size[1]}")
         self.root.minsize(900, 600)
-        self.theme = "flatly"
-
+        
+        # Variáveis de controle
         self.selected_file = tk.StringVar()
-        self.sheet_name = tk.StringVar(value="Cálculo MRP")
-        self.df_table = pd.DataFrame()
-        self.current_page = 0
-        self.page_size = 50
-
+        self.sheet_name = tk.StringVar(value=self.state.config.sheet_name)
         self.compare_before = None
         self.compare_after = None
-
+        
+        # Configurar atalhos de teclado
+        self._setup_shortcuts()
+        
+        # Construir interface
         self._build_ui()
+        
+        # Configurar handlers para eventos de janela
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self.root.bind('<Configure>', self._on_window_configure)
+    
+    def _setup_shortcuts(self):
+        """Configura atalhos de teclado."""
+        self.root.bind('<Control-o>', lambda e: self._browse_file())
+        self.root.bind('<Control-s>', lambda e: self._export_excel())
+        self.root.bind('<Control-f>', lambda e: self._focus_filter())
+        self.root.bind('<Control-r>', lambda e: self._run_analysis())
+        self.root.bind('<Control-t>', lambda e: self._toggle_theme())
+        
+    def _on_closing(self):
+        """Handler para fechamento da janela."""
+        try:
+            self.state.config.window_size = (self.root.winfo_width(), self.root.winfo_height())
+            self.state.save_state()
+        finally:
+            self.root.destroy()
+            
+    def _on_window_configure(self, event):
+        """Handler para redimensionamento da janela."""
+        if event.widget == self.root:
+            # Atualizar layout responsivo aqui se necessário
+            pass
 
     def _toggle_theme(self):
         self.theme = "darkly" if self.theme == "flatly" else "flatly"
@@ -108,40 +180,110 @@ class MRPGUI:
         self.log_text.see(tk.END)
 
     def _run_analysis(self):
-        file = self.selected_file.get()
-        sheet = self.sheet_name.get()
-
+        """Executa a análise com feedback aprimorado e tratamento de erros robusto."""
+        try:
+            file = self.selected_file.get()
+            sheet = self.sheet_name.get()
+            
+            # Validação de entrada
+            self._validate_input(file, sheet)
+            
+            # Iniciar análise com feedback visual
+            self._start_analysis_feedback()
+            
+            # Executar análise em background
+            self.root.after(100, lambda: self._execute_analysis(file, sheet))
+            
+        except Exception as e:
+            self._handle_analysis_error(str(e))
+            
+    def _validate_input(self, file: str, sheet: str) -> None:
+        """Validação robusta de entrada."""
+        if not file:
+            raise ValueError("Please select a file to analyze.")
+            
         if not os.path.exists(file):
-            messagebox.showerror("Error", "File not found.")
-            self._log("File not found.", "error")
-            return
-
+            raise FileNotFoundError(f"File not found: {file}")
+            
+        if not sheet:
+            raise ValueError("Sheet name cannot be empty.")
+            
         if not self._validate_sheet(file, sheet):
-            messagebox.showerror("Error", f"Sheet '{sheet}' not found.")
-            self._log(f"Sheet '{sheet}' not found.", "error")
-            return
-
+            raise ValueError(f"Sheet '{sheet}' not found in the workbook.")
+            
+    def _start_analysis_feedback(self):
+        """Configura feedback visual para análise."""
         self.progress.start()
-        self.status_label.config(text="Analyzing...", foreground="#007bff")
+        self.status_label.config(
+            text="Analyzing...",
+            foreground="#007bff"
+        )
+        self._log("Starting analysis...", "info")
         self.root.update_idletasks()
-
-        start = time.time()
-        output_file = os.path.join(os.path.dirname(file), "itens_criticos.xlsx")
-        count, error, _ = analyze_mrp(file, sheet, output_file)
-        self.progress.stop()
-
-        if error:
-            self._log(f"Error: {error}", "error")
-            self.status_label.config(text="Analysis failed.", foreground="#dc3545")
-            messagebox.showerror("Analysis Error", error)
-        else:
-            elapsed = round(time.time() - start, 2)
-            self._log(f"Completed in {elapsed}s. {count} critical items.", "success")
-            self.status_label.config(text=f"Completed in {elapsed}s", foreground="#28a745")
-            self._load_table(output_file)
-            self.notebook.select(self.tab_table)
-            if messagebox.askyesno("Success", "Do you want to open the generated file?"):
-                webbrowser.open(output_file)
+        
+    def _execute_analysis(self, file: str, sheet: str):
+        """Executa a análise com medição de performance."""
+        try:
+            start = time.time()
+            
+            # Definir arquivo de saída
+            output_file = os.path.join(
+                os.path.dirname(file),
+                f"itens_criticos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            )
+            
+            # Executar análise
+            count, error, summary = analyze_mrp(file, sheet, output_file)
+            
+            if error:
+                raise Exception(error)
+                
+            # Processar sucesso
+            self._handle_analysis_success(output_file, count, time.time() - start, summary)
+            
+        except Exception as e:
+            self._handle_analysis_error(str(e))
+        finally:
+            self.progress.stop()
+            
+    def _handle_analysis_success(self, output_file: str, count: int, elapsed: float, summary: dict):
+        """Processa sucesso da análise."""
+        elapsed = round(elapsed, 2)
+        
+        # Atualizar interface
+        self._log(f"Analysis completed in {elapsed}s. Found {count} critical items.", "success")
+        self.status_label.config(
+            text=f"Completed in {elapsed}s",
+            foreground="#28a745"
+        )
+        
+        # Carregar resultados
+        self._load_table(output_file)
+        self.notebook.select(self.tab_table)
+        
+        # Mostrar resumo
+        message = (
+            f"Analysis completed successfully!\n\n"
+            f"Time: {elapsed}s\n"
+            f"Critical Items: {count}\n"
+            f"Output: {os.path.basename(output_file)}\n\n"
+            "Would you like to open the generated file?"
+        )
+        
+        if messagebox.askyesno("Success", message):
+            webbrowser.open(output_file)
+            
+    def _handle_analysis_error(self, error: str):
+        """Processa erro da análise."""
+        self._log(f"Error during analysis: {error}", "error")
+        self.status_label.config(
+            text="Analysis failed.",
+            foreground="#dc3545"
+        )
+        messagebox.showerror(
+            "Analysis Error",
+            f"An error occurred during analysis:\n\n{error}"
+        )
 
     def _validate_sheet(self, file, sheet):
         try:
@@ -219,25 +361,49 @@ class MRPGUI:
             self._log(f"Error loading table: {e}", "error")
 
     def _render_table(self):
+        """Renderiza a tabela com paginação eficiente e cache."""
         self.tree.delete(*self.tree.get_children())
-        df = self.df_table.copy()
-        start = self.current_page * self.page_size
-        end = start + self.page_size
+        df = self.state.df_table
+        
+        # Usar cache para cálculos estatísticos
+        if not hasattr(self, '_stats_cache') or self.state.filter_applied:
+            self._stats_cache = {
+                'total': len(df),
+                'soma': df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0,
+                'media': round(df["QUANTIDADE A SOLICITAR"].mean(), 2) if "QUANTIDADE A SOLICITAR" in df.columns else 0,
+                'top_forn': df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
+            }
+            self.state.filter_applied = False
+            
+        # Paginação eficiente
+        start = self.state.current_page * self.state.config.page_size
+        end = start + self.state.config.page_size
         page = df.iloc[start:end]
-
-        self.tree["columns"] = list(df.columns)
-        for col in df.columns:
-            self.tree.heading(col, text=col, command=lambda c=col: self._sort_column(c))
-            self.tree.column(col, width=120, anchor="center")
-
-        for _, row in page.iterrows():
-            self.tree.insert("", tk.END, values=list(row))
-
-        total = len(df)
-        soma = df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0
-        media = round(df["QUANTIDADE A SOLICITAR"].mean(), 2) if "QUANTIDADE A SOLICITAR" in df.columns else 0
-        top_forn = df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
-        self.stats_label.config(text=f"Total: {total} | Sum: {soma} | Avg: {media} | Top Supplier: {top_forn}")
+        
+        # Configurar colunas se necessário
+        if not self.tree["columns"]:
+            self.tree["columns"] = list(df.columns)
+            for col in df.columns:
+                self.tree.heading(col, text=col, command=lambda c=col: self._sort_column(c))
+                self.tree.column(col, width=120, anchor="center")
+                
+        # Renderizar linhas com cores alternadas
+        for i, (_, row) in enumerate(page.iterrows()):
+            tags = ('oddrow',) if i % 2 else ('evenrow',)
+            self.tree.insert("", tk.END, values=list(row), tags=tags)
+            
+        # Atualizar estatísticas
+        stats = self._stats_cache
+        self.stats_label.config(
+            text=f"Total: {stats['total']} | Sum: {stats['soma']} | " \
+                f"Avg: {stats['media']} | Top Supplier: {stats['top_forn']}"
+        )
+        
+        # Atualizar navegação
+        total_pages = (stats['total'] - 1) // self.state.config.page_size + 1
+        self.page_label.config(
+            text=f"Page {self.state.current_page + 1} of {total_pages}"
+        )
 
     def _apply_filter(self):
         df = self.df_table.copy()
