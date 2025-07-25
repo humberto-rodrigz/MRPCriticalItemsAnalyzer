@@ -387,19 +387,16 @@ class MRPGUI:
                 self.tree.heading(col, text=col, command=lambda c=col: self._sort_column(c))
                 self.tree.column(col, width=120, anchor="center")
                 
-        # Renderizar linhas com cores alternadas
         for i, (_, row) in enumerate(page.iterrows()):
             tags = ('oddrow',) if i % 2 else ('evenrow',)
             self.tree.insert("", tk.END, values=list(row), tags=tags)
-            
-        # Atualizar estatísticas
+
         stats = self._stats_cache
         self.stats_label.config(
             text=f"Total: {stats['total']} | Sum: {stats['soma']} | " \
                 f"Avg: {stats['media']} | Top Supplier: {stats['top_forn']}"
         )
         
-        # Atualizar navegação
         total_pages = (stats['total'] - 1) // self.state.config.page_size + 1
         self.page_label.config(
             text=f"Page {self.state.current_page + 1} of {total_pages}"
@@ -520,7 +517,6 @@ class MRPGUI:
         self.compare_tree.delete(*self.compare_tree.get_children())
         self.compare_tree["columns"] = list(df.columns)
 
-        # Melhorias: colorir linhas por status e ajustar largura automática
         status_colors = {
             "New": "#d4edda",
             "Removed": "#f8d7da",
@@ -535,7 +531,6 @@ class MRPGUI:
             self.compare_tree.insert("", tk.END, values=list(row), tags=(tag,))
         for status, color in status_colors.items():
             self.compare_tree.tag_configure(status, background=color)
-        # Ajuste automático de largura
         for col in df.columns:
             max_len = max([len(str(x)) for x in df[col].values] + [len(col)])
             self.compare_tree.column(col, width=min(200, max(80, max_len * 10)))
