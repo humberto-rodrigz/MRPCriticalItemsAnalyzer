@@ -12,6 +12,8 @@ from ttkbootstrap import Style
 from ttkbootstrap.tooltip import ToolTip
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
+import json 
+from ttkbootstrap.tooltip import ToolTip
 
 @dataclass
 class AppConfig:
@@ -51,7 +53,7 @@ class AppState:
     def save_state(self):
         """Salva o estado atual da aplicação."""
         self.config.save()
-
+        self.save_table_data()
 
 class MRPGUI:
     def __init__(self, root):
@@ -63,19 +65,15 @@ class MRPGUI:
         self.root.geometry(f"{self.state.config.window_size[0]}x{self.state.config.window_size[1]}")
         self.root.minsize(900, 600)
         
-        # Variáveis de controle
         self.selected_file = tk.StringVar()
         self.sheet_name = tk.StringVar(value=self.state.config.sheet_name)
         self.compare_before = None
         self.compare_after = None
         
-        # Configurar atalhos de teclado
         self._setup_shortcuts()
         
-        # Construir interface
         self._build_ui()
         
-        # Configurar handlers para eventos de janela
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.root.bind('<Configure>', self._on_window_configure)
     
@@ -98,7 +96,6 @@ class MRPGUI:
     def _on_window_configure(self, event):
         """Handler para redimensionamento da janela."""
         if event.widget == self.root:
-            # Atualizar layout responsivo aqui se necessário
             pass
 
     def _toggle_theme(self):
@@ -185,13 +182,10 @@ class MRPGUI:
             file = self.selected_file.get()
             sheet = self.sheet_name.get()
             
-            # Validação de entrada
             self._validate_input(file, sheet)
             
-            # Iniciar análise com feedback visual
             self._start_analysis_feedback()
-            
-            # Executar análise em background
+
             self.root.after(100, lambda: self._execute_analysis(file, sheet))
             
         except Exception as e:
@@ -226,19 +220,16 @@ class MRPGUI:
         try:
             start = time.time()
             
-            # Definir arquivo de saída
             output_file = os.path.join(
                 os.path.dirname(file),
                 f"itens_criticos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             )
             
-            # Executar análise
             count, error, summary = analyze_mrp(file, sheet, output_file)
             
             if error:
                 raise Exception(error)
                 
-            # Processar sucesso
             self._handle_analysis_success(output_file, count, time.time() - start, summary)
             
         except Exception as e:
@@ -250,18 +241,15 @@ class MRPGUI:
         """Processa sucesso da análise."""
         elapsed = round(elapsed, 2)
         
-        # Atualizar interface
         self._log(f"Analysis completed in {elapsed}s. Found {count} critical items.", "success")
         self.status_label.config(
             text=f"Completed in {elapsed}s",
             foreground="#28a745"
         )
-        
-        # Carregar resultados
+
         self._load_table(output_file)
         self.notebook.select(self.tab_table)
-        
-        # Mostrar resumo
+
         message = (
             f"Analysis completed successfully!\n\n"
             f"Time: {elapsed}s\n"
@@ -272,7 +260,13 @@ class MRPGUI:
         
         if messagebox.askyesno("Success", message):
             webbrowser.open(output_file)
-            
+        self._log(f"Output file: {output_file}", "info")
+        self.status_label.config(
+            text=f"Output file: {os.path.basename(output_file)}",
+            foreground="#28a745"
+        )        
+    
+
     def _handle_analysis_error(self, error: str):
         """Processa erro da análise."""
         self._log(f"Error during analysis: {error}", "error")
@@ -365,7 +359,6 @@ class MRPGUI:
         self.tree.delete(*self.tree.get_children())
         df = self.state.df_table
         
-        # Usar cache para cálculos estatísticos
         if not hasattr(self, '_stats_cache') or self.state.filter_applied:
             self._stats_cache = {
                 'total': len(df),
@@ -374,13 +367,11 @@ class MRPGUI:
                 'top_forn': df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
             }
             self.state.filter_applied = False
-            
-        # Paginação eficiente
+
         start = self.state.current_page * self.state.config.page_size
         end = start + self.state.config.page_size
         page = df.iloc[start:end]
         
-        # Configurar colunas se necessário
         if not self.tree["columns"]:
             self.tree["columns"] = list(df.columns)
             for col in df.columns:
@@ -485,7 +476,10 @@ class MRPGUI:
             messagebox.showwarning("Missing File", "Load both analyses to compare.")
             self._log("Both analyses must be loaded for comparison.", "error")
             return
-
+        if self.compare_before.empty or self.compare_after.empty:
+            messagebox.showwarning("Empty Analysis", "One or both analyses are empty.")
+            self._log("One or both analyses are empty.", "error")
+            return
         before = self.compare_before.set_index("CÓD")
         after = self.compare_after.set_index("CÓD")
 
@@ -534,7 +528,9 @@ class MRPGUI:
         for col in df.columns:
             max_len = max([len(str(x)) for x in df[col].values] + [len(col)])
             self.compare_tree.column(col, width=min(200, max(80, max_len * 10)))
-
+        for col in df.columns:
+            self.compare_tree.heading(col, text=col, command=lambda c=col: self._sort_compare_column(c))
+            
     def _show_about(self):
         messagebox.showinfo(
             "About",
