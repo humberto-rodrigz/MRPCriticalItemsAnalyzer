@@ -8,12 +8,12 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 from mrp_analyzer import analyze_mrp
-from ttkbootstrap import Style
-from ttkbootstrap.tooltip import ToolTip
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import json 
+from ttkbootstrap import Style
 from ttkbootstrap.tooltip import ToolTip
+
 
 @dataclass
 class AppConfig:

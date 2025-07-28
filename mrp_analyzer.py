@@ -45,7 +45,7 @@ def validate_positive_values(df: pd.DataFrame, columns: list) -> None:
             raise ValidationError(f"Valores negativos encontrados na coluna {col}. Linhas: {negative_rows.index.tolist()}")
 
 @lru_cache(maxsize=32)
-def analyze_mrp_from_excel(input_file: str, sheet_name: str, output_file: str = 'itens_criticos.xlsx') -> Tuple[Optional[int], Optional[str], Optional[pd.DataFrame]]:
+def analyze_mrp(input_file: str, sheet_name: str, output_file: str = 'itens_criticos.xlsx') -> Tuple[Optional[int], Optional[str], Optional[pd.DataFrame]]:
     """
     Realiza a análise MRP a partir de um arquivo Excel, salva resultados e histórico, retorna quantidade de itens críticos.
     """
