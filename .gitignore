@@ -1,0 +1,34 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Data
+data/
+*.xlsx
+*.xls
+*.csv
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
