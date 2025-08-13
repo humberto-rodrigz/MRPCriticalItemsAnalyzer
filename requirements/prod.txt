@@ -1,0 +1,4 @@
+﻿pandas>=1.5.0
+xlsxwriter>=3.0.0
+openpyxl>=3.0.0
+ttkbootstrap>=1.0.0
