@@ -1,83 +1,201 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+"""
+MRP Critical Items Analyzer - GUI Module
+A professional GUI application for analyzing MRP data and identifying critical items.
+
+Author: Humberto Rodrigues
+Date: August 2025
+Version: 1.0.0
+"""
+
 import os
 import time
 import json
 import webbrowser
 from pathlib import Path
 from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, Tuple, List
+
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
 import pandas as pd
-from mrp_analyzer import analyze_mrp
 from ttkbootstrap import Style
 from ttkbootstrap.tooltip import ToolTip
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
+
+from mrp_analyzer import MRPAnalyzer, MRPConfig
+
+# Configure logging
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 @dataclass
-class AppConfig:
-    """Classe para gerenciar configurações do aplicativo."""
-    last_directory: str = ""
-    theme: str = "flatly"
-    page_size: int = 50
-    sheet_name: str = "Cálculo MRP"
-    window_size: tuple = (1200, 800)
+class GUIConfig:
+    """Configuration management for the GUI application."""
+    # File and directory settings
+    last_directory: str = field(default="")
+    default_sheet_name: str = field(default="Cálculo MRP")
+    
+    # UI settings
+    theme: str = field(default="flatly")
+    window_size: Tuple[int, int] = field(default=(1200, 800))
+    min_window_size: Tuple[int, int] = field(default=(900, 600))
+    
+    # Table settings
+    page_size: int = field(default=50)
+    table_columns: List[str] = field(default_factory=lambda: [
+        "CÓD", "FORNECEDOR PRINCIPAL", "DESCRIÇÃOPROMOB", 
+        "ESTOQUE DISPONÍVEL", "QUANTIDADE A SOLICITAR"
+    ])
+    
+    # File paths
+    config_dir: Path = field(default_factory=lambda: Path.home() / '.mrp_analyzer')
+    config_file: Path = field(default_factory=lambda: Path.home() / '.mrp_analyzer' / 'config.json')
+    
+    def __post_init__(self):
+        """Ensures configuration directory exists after initialization."""
+        self.config_dir.mkdir(parents=True, exist_ok=True)
     
     @classmethod
-    def load(cls) -> 'AppConfig':
-        """Carrega configurações do arquivo."""
-        config_path = Path.home() / '.mrp_analyzer' / 'config.json'
-        if config_path.exists():
-            with open(config_path) as f:
-                return cls(**json.load(f))
+    def load(cls) -> 'GUIConfig':
+        """
+        Loads configuration from file or creates default configuration.
+        
+        Returns:
+            GUIConfig: Loaded or default configuration
+        """
+        try:
+            if cls.config_file.exists():
+                with open(cls.config_file) as f:
+                    return cls(**json.load(f))
+        except Exception as e:
+            logger.error(f"Error loading config: {e}")
         return cls()
     
     def save(self) -> None:
-        """Salva configurações em arquivo."""
-        config_path = Path.home() / '.mrp_analyzer' / 'config.json'
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, 'w') as f:
-            json.dump(self.__dict__, f)
+        """Saves current configuration to file."""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.__dict__, f, indent=2)
+            logger.info("Configuration saved successfully")
+        except Exception as e:
+            logger.error(f"Error saving config: {e}")
 
+@dataclass
 class AppState:
-    """Classe para gerenciar o estado da aplicação."""
-    def __init__(self):
-        self.config = AppConfig.load()
-        self.df_table = pd.DataFrame()
-        self.current_page = 0
-        self.filter_applied = False
-        self.last_sort_column = None
-        self.sort_ascending = True
-        
-    def save_state(self):
-        """Salva o estado atual da aplicação."""
-        self.config.save()
-
+    """Application state management."""
+    # Configuration
+    config: GUIConfig = field(default_factory=GUIConfig.load)
+    
+    # Data state
+    df_table: pd.DataFrame = field(default_factory=pd.DataFrame)
+    current_page: int = field(default=0)
+    total_pages: int = field(default=0)
+    
+    # UI state
+    filter_applied: bool = field(default=False)
+    last_sort_column: Optional[str] = field(default=None)
+    sort_ascending: bool = field(default=True)
+    
+    # Analysis state
+    mrp_analyzer: MRPAnalyzer = field(default_factory=MRPAnalyzer)
+    last_analysis_file: Optional[Path] = field(default=None)
+    
+    def save_state(self) -> None:
+        """Saves current application state."""
+        try:
+            self.config.save()
+            self._save_table_data()
+            logger.info("Application state saved successfully")
+        except Exception as e:
+            logger.error(f"Error saving application state: {e}")
+    
+    def _save_table_data(self) -> None:
+        """Saves current table data to temporary storage."""
+        if not self.df_table.empty:
+            try:
+                temp_file = self.config.config_dir / 'last_analysis.pkl'
+                self.df_table.to_pickle(temp_file)
+                logger.debug("Table data saved to temporary storage")
+            except Exception as e:
+                logger.error(f"Error saving table data: {e}")
+    
+    def update_pagination(self) -> None:
+        """Updates pagination information based on current data."""
+        if self.df_table.empty:
+            self.total_pages = 0
+            self.current_page = 0
+        else:
+            self.total_pages = (len(self.df_table) - 1) // self.config.page_size + 1
+            self.current_page = min(self.current_page, self.total_pages - 1)
 
 class MRPGUI:
-    def __init__(self, root):
+    """
+    Main GUI class for the MRP Critical Items Analyzer application.
+    Handles all user interface elements and interactions.
+    """
+    
+    def __init__(self, root: tk.Tk):
+        """
+        Initialize the GUI application.
+        
+        Args:
+            root: The root Tkinter window
+        """
         self.root = root
+        self._initialize_state()
+        self._setup_window()
+        self._create_variables()
+        self._setup_bindings()
+        self._build_ui()
+        
+    def _initialize_state(self) -> None:
+        """Initialize application state and styling."""
         self.state = AppState()
         self.style = Style(self.state.config.theme)
+        logger.info("Application state initialized")
         
+    def _setup_window(self) -> None:
+        """Configure main window properties."""
         self.root.title("MRP Critical Items Analyzer")
-        self.root.geometry(f"{self.state.config.window_size[0]}x{self.state.config.window_size[1]}")
-        self.root.minsize(900, 600)
+        self.root.geometry(
+            f"{self.state.config.window_size[0]}x{self.state.config.window_size[1]}"
+        )
+        self.root.minsize(*self.state.config.min_window_size)
         
-        # Variáveis de controle
+        # Set window icon if available
+        icon_path = Path(__file__).parent / "assets" / "icon.ico"
+        if icon_path.exists():
+            self.root.iconbitmap(str(icon_path))
+            
+    def _create_variables(self) -> None:
+        """Initialize Tkinter variables."""
         self.selected_file = tk.StringVar()
-        self.sheet_name = tk.StringVar(value=self.state.config.sheet_name)
+        self.sheet_name = tk.StringVar(value=self.state.config.default_sheet_name)
+        self.filter_column = tk.StringVar()
+        self.filter_value = tk.StringVar()
+        self.qtd_min = tk.StringVar()
+        self.qtd_max = tk.StringVar()
+        
+        # Comparison variables
         self.compare_before = None
         self.compare_after = None
         
-        # Configurar atalhos de teclado
-        self._setup_shortcuts()
-        
-        # Construir interface
-        self._build_ui()
-        
-        # Configurar handlers para eventos de janela
+    def _setup_bindings(self) -> None:
+        """Setup keyboard shortcuts and event bindings."""
+        # Window events
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.root.bind('<Configure>', self._on_window_configure)
+        
+        # Keyboard shortcuts
+        self.root.bind('<Control-o>', lambda e: self._browse_file())
+        self.root.bind('<Control-s>', lambda e: self._export_excel())
+        self.root.bind('<Control-f>', lambda e: self._focus_filter())
+        self.root.bind('<Control-r>', lambda e: self._run_analysis())
+        self.root.bind('<Control-t>', lambda e: self._toggle_theme())
+        
+        logger.debug("Event bindings configured")
     
     def _setup_shortcuts(self):
         """Configura atalhos de teclado."""
@@ -98,7 +216,6 @@ class MRPGUI:
     def _on_window_configure(self, event):
         """Handler para redimensionamento da janela."""
         if event.widget == self.root:
-            # Atualizar layout responsivo aqui se necessário
             pass
 
     def _toggle_theme(self):
@@ -179,40 +296,67 @@ class MRPGUI:
         self.log_text.tag_config(level, foreground=color)
         self.log_text.see(tk.END)
 
-    def _run_analysis(self):
-        """Executa a análise com feedback aprimorado e tratamento de erros robusto."""
+    def _run_analysis(self) -> None:
+        """
+        Executes MRP analysis with enhanced feedback and robust error handling.
+        Runs the analysis in a separate thread to prevent UI freezing.
+        """
         try:
-            file = self.selected_file.get()
-            sheet = self.sheet_name.get()
+            file_path = Path(self.selected_file.get())
+            sheet_name = self.sheet_name.get()
             
-            # Validação de entrada
-            self._validate_input(file, sheet)
-            
-            # Iniciar análise com feedback visual
+            self._validate_analysis_input(file_path, sheet_name)
             self._start_analysis_feedback()
             
-            # Executar análise em background
-            self.root.after(100, lambda: self._execute_analysis(file, sheet))
+            # Schedule analysis execution
+            self.root.after(100, lambda: self._execute_analysis(file_path, sheet_name))
             
         except Exception as e:
             self._handle_analysis_error(str(e))
             
-    def _validate_input(self, file: str, sheet: str) -> None:
-        """Validação robusta de entrada."""
-        if not file:
+    def _validate_analysis_input(self, file_path: Path, sheet_name: str) -> None:
+        """
+        Validates input parameters for analysis.
+        
+        Args:
+            file_path: Path to the input Excel file
+            sheet_name: Name of the worksheet to analyze
+            
+        Raises:
+            ValueError: If input parameters are invalid
+            FileNotFoundError: If input file doesn't exist
+        """
+        if not file_path or str(file_path).strip() == "":
             raise ValueError("Please select a file to analyze.")
             
-        if not os.path.exists(file):
-            raise FileNotFoundError(f"File not found: {file}")
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
             
-        if not sheet:
+        if not sheet_name or sheet_name.strip() == "":
             raise ValueError("Sheet name cannot be empty.")
             
-        if not self._validate_sheet(file, sheet):
-            raise ValueError(f"Sheet '{sheet}' not found in the workbook.")
+        if not self._validate_excel_sheet(file_path, sheet_name):
+            raise ValueError(f"Sheet '{sheet_name}' not found in the workbook.")
             
-    def _start_analysis_feedback(self):
-        """Configura feedback visual para análise."""
+    def _validate_excel_sheet(self, file_path: Path, sheet_name: str) -> bool:
+        """
+        Validates that the specified sheet exists in the Excel file.
+        
+        Args:
+            file_path: Path to the Excel file
+            sheet_name: Name of the sheet to validate
+            
+        Returns:
+            bool: True if sheet exists, False otherwise
+        """
+        try:
+            return sheet_name in pd.ExcelFile(file_path).sheet_names
+        except Exception as e:
+            logger.error(f"Error validating sheet: {e}")
+            return False
+            
+    def _start_analysis_feedback(self) -> None:
+        """Configures visual feedback for analysis progress."""
         self.progress.start()
         self.status_label.config(
             text="Analyzing...",
@@ -221,69 +365,138 @@ class MRPGUI:
         self._log("Starting analysis...", "info")
         self.root.update_idletasks()
         
-    def _execute_analysis(self, file: str, sheet: str):
-        """Executa a análise com medição de performance."""
+    def _execute_analysis(self, file_path: Path, sheet_name: str) -> None:
+        """
+        Executes the MRP analysis with performance measurement.
+        
+        Args:
+            file_path: Path to the input Excel file
+            sheet_name: Name of the worksheet to analyze
+        """
         try:
-            start = time.time()
+            start_time = time.time()
             
-            # Definir arquivo de saída
-            output_file = os.path.join(
-                os.path.dirname(file),
-                f"itens_criticos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            output_file = (file_path.parent / 
+                         f"itens_criticos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+            
+            # Execute analysis using MRPAnalyzer
+            count, error, results = self.state.mrp_analyzer.analyze(
+                str(file_path), 
+                sheet_name, 
+                str(output_file)
             )
-            
-            # Executar análise
-            count, error, summary = analyze_mrp(file, sheet, output_file)
             
             if error:
                 raise Exception(error)
                 
-            # Processar sucesso
-            self._handle_analysis_success(output_file, count, time.time() - start, summary)
+            self._handle_analysis_success(output_file, count, time.time() - start_time, results)
             
         except Exception as e:
             self._handle_analysis_error(str(e))
         finally:
             self.progress.stop()
             
-    def _handle_analysis_success(self, output_file: str, count: int, elapsed: float, summary: dict):
-        """Processa sucesso da análise."""
+    def _handle_analysis_success(self, output_file: Path, count: int, 
+                               elapsed: float, results: pd.DataFrame) -> None:
+        """
+        Handles successful analysis completion.
+        
+        Args:
+            output_file: Path to the output file
+            count: Number of critical items found
+            elapsed: Time taken for analysis
+            results: DataFrame containing analysis results
+        """
         elapsed = round(elapsed, 2)
         
-        # Atualizar interface
-        self._log(f"Analysis completed in {elapsed}s. Found {count} critical items.", "success")
-        self.status_label.config(
-            text=f"Completed in {elapsed}s",
-            foreground="#28a745"
-        )
+        # Update UI with success information
+        self._update_success_ui(elapsed, output_file)
         
-        # Carregar resultados
+        # Load results into table
         self._load_table(output_file)
         self.notebook.select(self.tab_table)
         
-        # Mostrar resumo
+        # Show success message and offer to open file
+        if self._show_success_dialog(count, elapsed, output_file):
+            self._open_output_file(output_file)
+            
+        # Log success
+        logger.info(
+            f"Analysis completed successfully: {count} items found in {elapsed}s. "
+            f"Output saved to {output_file}"
+        )
+        
+    def _update_success_ui(self, elapsed: float, output_file: Path) -> None:
+        """Updates UI elements after successful analysis."""
+        self._log(
+            f"Analysis completed in {elapsed}s", 
+            "success"
+        )
+        self.status_label.config(
+            text=f"Output file: {output_file.name}",
+            foreground="#28a745"
+        )
+        
+    def _show_success_dialog(self, count: int, elapsed: float, 
+                           output_file: Path) -> bool:
+        """
+        Shows success dialog and returns whether to open the output file.
+        
+        Returns:
+            bool: True if user wants to open the output file
+        """
         message = (
             f"Analysis completed successfully!\n\n"
             f"Time: {elapsed}s\n"
             f"Critical Items: {count}\n"
-            f"Output: {os.path.basename(output_file)}\n\n"
+            f"Output: {output_file.name}\n\n"
             "Would you like to open the generated file?"
         )
+        return messagebox.askyesno("Success", message)
         
-        if messagebox.askyesno("Success", message):
-            webbrowser.open(output_file)
-            
-    def _handle_analysis_error(self, error: str):
-        """Processa erro da análise."""
+    def _open_output_file(self, file_path: Path) -> None:
+        """
+        Opens the output file in the default application.
+        
+        Args:
+            file_path: Path to the file to open
+        """
+        try:
+            webbrowser.open(str(file_path))
+            logger.info(f"Opened output file: {file_path}")
+        except Exception as e:
+            logger.error(f"Error opening file: {e}")
+            messagebox.showerror(
+                "Error",
+                f"Could not open the file: {str(e)}"
+            )
+
+    def _handle_analysis_error(self, error: str) -> None:
+        """
+        Handles analysis errors and updates UI accordingly.
+        
+        Args:
+            error: Error message to display
+        """
+        # Log error
+        logger.error(f"Analysis error: {error}")
+        
+        # Update UI
         self._log(f"Error during analysis: {error}", "error")
         self.status_label.config(
-            text="Analysis failed.",
+            text="Analysis failed",
             foreground="#dc3545"
         )
+        
+        # Show error dialog
         messagebox.showerror(
             "Analysis Error",
             f"An error occurred during analysis:\n\n{error}"
         )
+        
+        # Reset progress
+        self.progress.stop()
+        self.root.update_idletasks()
 
     def _validate_sheet(self, file, sheet):
         try:
@@ -350,59 +563,137 @@ class MRPGUI:
         btn_next.pack(side=tk.LEFT)
         ToolTip(btn_next, text="Next page")
 
-    def _load_table(self, path=None):
+    def _load_table(self, path: Optional[Path] = None) -> None:
+        """
+        Loads and displays table data from an Excel file.
+        
+        Args:
+            path: Optional path to the Excel file. If not provided,
+                  uses the last analysis file.
+        """
         try:
-            path = path or os.path.join(os.path.dirname(self.selected_file.get()), "itens_criticos.xlsx")
-            self.df_table = pd.read_excel(path)
-            self.column_box['values'] = list(self.df_table.columns)
-            self.current_page = 0
+            file_path = path or Path(self.selected_file.get()).parent / "itens_criticos.xlsx"
+            
+            # Load data with optimized settings
+            self.state.df_table = pd.read_excel(
+                file_path,
+                dtype={
+                    'CÓD': str,
+                    'QUANTIDADE A SOLICITAR': 'Int64',
+                    'ESTOQUE DISPONÍVEL': 'Int64'
+                }
+            )
+            
+            # Update UI elements
+            self.column_box['values'] = list(self.state.df_table.columns)
+            self.state.current_page = 0
+            self.state.update_pagination()
+            
+            # Render table and update statistics
             self._render_table()
+            logger.info(f"Table loaded successfully from {file_path}")
+            
         except Exception as e:
-            self._log(f"Error loading table: {e}", "error")
+            logger.error(f"Error loading table: {e}")
+            self._log(f"Error loading table: {str(e)}", "error")
+            messagebox.showerror("Error", f"Failed to load table: {str(e)}")
 
-    def _render_table(self):
-        """Renderiza a tabela com paginação eficiente e cache."""
+    def _render_table(self) -> None:
+        """
+        Renders the table with efficient pagination and caching.
+        Updates statistics and pagination information.
+        """
+        # Clear existing data
         self.tree.delete(*self.tree.get_children())
         df = self.state.df_table
         
-        # Usar cache para cálculos estatísticos
-        if not hasattr(self, '_stats_cache') or self.state.filter_applied:
-            self._stats_cache = {
-                'total': len(df),
-                'soma': df["QUANTIDADE A SOLICITAR"].sum() if "QUANTIDADE A SOLICITAR" in df.columns else 0,
-                'media': round(df["QUANTIDADE A SOLICITAR"].mean(), 2) if "QUANTIDADE A SOLICITAR" in df.columns else 0,
-                'top_forn': df["FORNECEDOR PRINCIPAL"].value_counts().idxmax() if "FORNECEDOR PRINCIPAL" in df.columns else "-"
-            }
-            self.state.filter_applied = False
-            
-        # Paginação eficiente
-        start = self.state.current_page * self.state.config.page_size
-        end = start + self.state.config.page_size
-        page = df.iloc[start:end]
+        if df.empty:
+            self._update_stats({
+                'total': 0,
+                'soma': 0,
+                'media': 0,
+                'top_forn': '-'
+            })
+            return
         
-        # Configurar colunas se necessário
+        # Update statistics if needed
+        if not hasattr(self, '_stats_cache') or self.state.filter_applied:
+            self._stats_cache = self._calculate_statistics(df)
+            self.state.filter_applied = False
+        
         if not self.tree["columns"]:
             self.tree["columns"] = list(df.columns)
             for col in df.columns:
                 self.tree.heading(col, text=col, command=lambda c=col: self._sort_column(c))
                 self.tree.column(col, width=120, anchor="center")
                 
-        # Renderizar linhas com cores alternadas
-        for i, (_, row) in enumerate(page.iterrows()):
+        # Get current page data
+        start_idx = self.state.current_page * self.state.config.page_size
+        end_idx = start_idx + self.state.config.page_size
+        current_page = df.iloc[start_idx:end_idx]
+        
+        # Render rows with alternating colors
+        for i, (_, row) in enumerate(current_page.iterrows()):
             tags = ('oddrow',) if i % 2 else ('evenrow',)
             self.tree.insert("", tk.END, values=list(row), tags=tags)
+
+        # Update statistics display
+        self._update_display_statistics()
+        
+    def _calculate_statistics(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Calculates table statistics.
+        
+        Args:
+            df: DataFrame to analyze
             
-        # Atualizar estatísticas
+        Returns:
+            Dict containing calculated statistics
+        """
+        try:
+            stats = {
+                'total': len(df),
+                'soma': 0,
+                'media': 0,
+                'top_forn': '-'
+            }
+            
+            if "QUANTIDADE A SOLICITAR" in df.columns:
+                qty_series = df["QUANTIDADE A SOLICITAR"]
+                stats.update({
+                    'soma': int(qty_series.sum()),
+                    'media': round(qty_series.mean(), 2)
+                })
+                
+            if "FORNECEDOR PRINCIPAL" in df.columns:
+                stats['top_forn'] = df["FORNECEDOR PRINCIPAL"].value_counts().idxmax()
+                
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error calculating statistics: {e}")
+            return {
+                'total': 0,
+                'soma': 0,
+                'media': 0,
+                'top_forn': 'Error'
+            }
+            
+    def _update_display_statistics(self) -> None:
+        """Updates the statistics display in the UI."""
         stats = self._stats_cache
+        
+        # Update statistics label
         self.stats_label.config(
-            text=f"Total: {stats['total']} | Sum: {stats['soma']} | " \
-                f"Avg: {stats['media']} | Top Supplier: {stats['top_forn']}"
+            text=(f"Total Items: {stats['total']} | "
+                  f"Total Quantity: {stats['soma']} | "
+                  f"Average: {stats['media']} | "
+                  f"Top Supplier: {stats['top_forn']}")
         )
         
-        # Atualizar navegação
-        total_pages = (stats['total'] - 1) // self.state.config.page_size + 1
+        # Update pagination label
         self.page_label.config(
-            text=f"Page {self.state.current_page + 1} of {total_pages}"
+            text=f"Page {self.state.current_page + 1} of {self.state.total_pages}"
         )
 
     def _apply_filter(self):
@@ -488,7 +779,10 @@ class MRPGUI:
             messagebox.showwarning("Missing File", "Load both analyses to compare.")
             self._log("Both analyses must be loaded for comparison.", "error")
             return
-
+        if self.compare_before.empty or self.compare_after.empty:
+            messagebox.showwarning("Empty Analysis", "One or both analyses are empty.")
+            self._log("One or both analyses are empty.", "error")
+            return
         before = self.compare_before.set_index("CÓD")
         after = self.compare_after.set_index("CÓD")
 
@@ -520,7 +814,6 @@ class MRPGUI:
         self.compare_tree.delete(*self.compare_tree.get_children())
         self.compare_tree["columns"] = list(df.columns)
 
-        # Melhorias: colorir linhas por status e ajustar largura automática
         status_colors = {
             "New": "#d4edda",
             "Removed": "#f8d7da",
@@ -535,11 +828,12 @@ class MRPGUI:
             self.compare_tree.insert("", tk.END, values=list(row), tags=(tag,))
         for status, color in status_colors.items():
             self.compare_tree.tag_configure(status, background=color)
-        # Ajuste automático de largura
         for col in df.columns:
             max_len = max([len(str(x)) for x in df[col].values] + [len(col)])
             self.compare_tree.column(col, width=min(200, max(80, max_len * 10)))
-
+        for col in df.columns:
+            self.compare_tree.heading(col, text=col, command=lambda c=col: self._sort_compare_column(c))
+            
     def _show_about(self):
         messagebox.showinfo(
             "About",
